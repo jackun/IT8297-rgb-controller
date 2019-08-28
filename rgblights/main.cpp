@@ -309,14 +309,16 @@ public:
 
 	void Init()
 	{
-		libusb_init(&ctx);
+		int res = libusb_init(&ctx);
+		if (res != LIBUSB_SUCCESS)
+			throw std::exception("Failed to init libusb");
 
-		handle = libusb_open_device_with_vid_pid(nullptr, 0x048D, 0x8297);
+		handle = libusb_open_device_with_vid_pid(ctx, 0x048D, 0x8297);
 
 		if (!handle)
 			throw std::exception("Failed to open device");
 
-		int res = libusb_claim_interface(handle, 0);
+		res = libusb_claim_interface(handle, 0);
 		if (res != LIBUSB_SUCCESS)
 			throw std::exception("Failed to claim interface 0");
 
