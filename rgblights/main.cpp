@@ -14,6 +14,10 @@
 #include <iostream>
 #include <libusb.h>
 
+#ifndef min
+#define min std::min
+#endif
+
 template < typename T, size_t N >
 constexpr size_t countof(T(&arr)[N])
 {
@@ -484,10 +488,15 @@ public:
 
 	~UsbIT8297()
 	{
-		if (ctx)
+		if (handle)
 		{
 			int res = libusb_release_interface(handle, 0);
 			libusb_close(handle);
+			handle = nullptr;
+		}
+
+		if (ctx)
+		{
 			libusb_exit(ctx);
 			ctx = nullptr;
 		}
