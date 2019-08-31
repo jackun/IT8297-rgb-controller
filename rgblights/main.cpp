@@ -9,6 +9,7 @@
 #include <iostream>
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 #include <string>
 #include <iostream>
 #include <libusb.h>
@@ -429,16 +430,16 @@ public:
 	{
 		int res = libusb_init(&ctx);
 		if (res != LIBUSB_SUCCESS)
-			throw std::exception("Failed to init libusb");
+			throw std::runtime_error("Failed to init libusb");
 
 		handle = libusb_open_device_with_vid_pid(ctx, 0x048D, 0x8297);
 
 		if (!handle)
-			throw std::exception("Failed to open device");
+			throw std::runtime_error("Failed to open device");
 
 		res = libusb_claim_interface(handle, 0);
 		if (res != LIBUSB_SUCCESS)
-			throw std::exception("Failed to claim interface 0");
+			throw std::runtime_error("Failed to claim interface 0");
 
 		// Most of the start up sequence as RGB Fusion does it
 		res = SendPacket(packet_cc6000);
@@ -675,7 +676,7 @@ int main()
 	{
 		ite.Init();
 	}
-	catch (std::exception &ex)
+	catch (std::runtime_error &ex)
 	{
 		std::cerr << ex.what() << std::endl;
 		return 1;
@@ -690,7 +691,7 @@ int main()
 
 	ite.SetAllPorts(EFFECT_PULSE, MakeColor(0xFF, 0x21, 0));
 
-	ite.StartPulseOrFlash(false, 5, 7, 2);
+	ite.StartPulseOrFlash(false, 5, 7, 2, 1200, 1200, 200);
 
 #if _WIN32
 	std::cerr << "\n\n\nPress enter to exit" << std::endl;
