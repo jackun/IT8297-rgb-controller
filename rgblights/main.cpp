@@ -2,6 +2,8 @@
 #include <conio.h>
 #endif
 
+#include <emmintrin.h>
+#include <vector>
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -52,7 +54,42 @@ enum LEDCount
 	LEDS_1024,
 };
 
+struct RGBBytes
+{
+	uint8_t g;
+	uint8_t r;
+	uint8_t b;
+};
+
 #pragma pack(push, 1)
+
+union PktRGB
+{
+	unsigned char buffer[64];
+	struct RGBData
+	{
+		uint8_t cc;// = 0xCC;
+		uint8_t header;// = 0x58 - lower header, 0x59 - upper header;
+		uint16_t boffset;// = 0; // in bytes, absolute
+		uint8_t  bcount;// = 0;
+		RGBBytes leds[19];
+		uint16_t padding0;
+	} s;
+
+	PktRGB()
+	{
+		Reset();
+	}
+
+	void Reset()
+	{
+		s.cc = 0xCC;
+		s.header = HDR_D_LED1_RGB; //sending as 0x53, or was it 0x54, screws with color cycle effect
+		s.boffset = 0;
+		s.bcount = 0;
+		memset(s.leds, 0, sizeof(s.leds));
+	}
+};
 
 union PktEffect
 {
@@ -73,7 +110,8 @@ union PktEffect
 		uint16_t period1; // fade out
 		uint16_t period2; // hold
 		uint16_t period3; // ???
-		uint8_t effect_param0; //random speed???
+		uint8_t effect_param0; //colorcycle - how many colors to cycle through (how are they set?)
+					// flash - if >0 cycle through N colors
 		uint8_t effect_param1; //??
 		uint8_t effect_param2; //idk, flash effect repeat count
 		uint8_t effect_param3; //idk
@@ -377,6 +415,7 @@ class UsbDevice
 public:
 	virtual void Init() = 0;
 	virtual int SendPacket(unsigned char *packet) = 0;
+	virtual bool SendRGB(const std::vector<uint32_t> &led_data) = 0;
 };
 
 class UsbIT8297 : public UsbDevice
@@ -415,8 +454,10 @@ public:
 			led_count = GetLedCount(report.total_leds);
 		}
 
-		//memset(buffer, 0, 64);
-		//res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x60CC, 0x0000, buffer, 64, 1000);
+		memset(buffer, 0, 64);
+		buffer[0] = 0xCC;
+		buffer[1] = 0x60;
+		res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
 
 		res = SendPacket(packet_cc3400); //set led count 0 aka 32
 		res = SendPacket(packet_cc3100); //disable something
@@ -484,6 +525,55 @@ public:
 		return SendPacket(packet_commit_effect) == 64;
 	}
 
+	bool StartPulseOrFlash(bool pulseOrFlash = false, uint8_t hdr = 5, uint8_t colors = 0, uint8_t repeat = 1, uint16_t p0 = 200, uint16_t p1 = 200, uint16_t p2 = 2200, uint32_t color = 0)
+	{
+		PktEffect effect;
+		effect.Init(hdr >= 0x20 ? hdr - 0x20 : hdr);
+		effect.e.effect_type = pulseOrFlash ? EFFECT_FLASH : EFFECT_PULSE;
+		effect.e.period0 = p0;
+		effect.e.period1 = p1;
+		effect.e.period2 = p2;
+		effect.e.effect_param0 = colors;
+		effect.e.effect_param1 = 0;
+		effect.e.effect_param2 = repeat;
+		int res = SendPacket(effect);
+		return res == 64 && StartEffect();
+	}
+
+	bool SendRGB(const std::vector<uint32_t> &led_data)
+	{
+		PktRGB packet;
+		int sent_data = 0, res, k = 0;
+		int leds = countof(packet.s.leds);
+		int left_leds = led_data.size();
+
+		while (left_leds > 0) {
+			packet.Reset();
+			leds = min(leds, left_leds);
+			left_leds -= leds;
+
+			packet.s.bcount = leds * 3;
+			packet.s.boffset = sent_data;
+			sent_data += packet.s.bcount;
+
+			for (int i = 0; i < leds; i++) {
+				uint32_t c = led_data[k];
+				packet.s.leds[i].r = c & 0xFF;
+				packet.s.leds[i].g = (c >> 8) & 0xFF;
+				packet.s.leds[i].b = (c >> 16) & 0xFF;
+				k++;
+			}
+
+			std::cout << "led offset " << (int)packet.s.boffset << ":" << (int)packet.s.bcount << std::endl;
+			res = SendPacket(packet.buffer);
+			if (res < 0) {
+				std::cerr << "error: " << res << std::endl;
+				return false;
+			}
+		}
+		return true;
+	}
+
 	void SetAllPorts(EffectType type, uint32_t color = 0)
 	{
 		PktEffect effect;
@@ -525,104 +615,54 @@ private:
 	uint32_t led_count = 32;
 };
 
-struct RGBBytes
-{
-	uint8_t g;
-	uint8_t r;
-	uint8_t b;
-};
-
-union PktRGB
-{
-	unsigned char buffer[64];
-	struct RGBData
-	{
-		uint8_t cc;// = 0xCC;
-		uint8_t header;// = 0x58 - lower header, 0x59 - upper header;
-		uint16_t boffset;// = 0; // in bytes, absolute
-		uint8_t  bcount;// = 0;
-		RGBBytes leds[19];
-		uint16_t padding0;
-	} s;
-
-	PktRGB()
-	{
-		Reset();
-	}
-
-	void Reset()
-	{
-		s.cc = 0xCC;
-		s.header = HDR_D_LED1_RGB; //sending as 0x53, or was it 0x54, screws with color cycle effect
-		s.boffset = 0;
-		s.bcount = 0;
-		memset(s.leds, 0, sizeof(s.leds));
-	}
-};
-
 void DoRGB(UsbDevice& usbDevice)
 {
 	int res;
-	PktRGB packet;
 
 	int delay_ms = 10;
 	int led_offset = 0;
 
-	int all_leds = 120; //defaults to 32 leds usually
+	//defaults to 32 leds usually
+	std::vector<uint32_t> led_data(120);
+
 	//for (int j = 0; j < 5000 / delay_ms; j++) // per 5 seconds or sumfin
-	for (int j = 0; j < all_leds * 5; j++)
+	for (int j = 0; j < led_data.size() * 5; j++)
 	{
-		//for (int i = 0; i < countof(packet_bytes); i++)
+		int i;
+		const uint8_t step = 10;
+		const __m128i step128 = _mm_setr_epi8(step, step, step, 0, step, step, step, 0, step, step, step, 0, step, step, step, 0);
+
+		// snake effect, substract step from individual RGB color bytes
+		size_t led_data_size = led_data.size();
+		led_data_size -= led_data_size % 4;
+		for (i = 0; i < led_data_size; i += 4)
 		{
-			int left_leds = all_leds;
-			int leds = countof(packet.s.leds);
-			int sent_data = 0;
-			int k = 0;
-
-			while (left_leds > 0) {
-				packet.Reset();
-				leds = min(leds, left_leds);
-				left_leds -= leds;
-
-				packet.s.bcount = leds * 3;
-				packet.s.boffset = sent_data;
-				sent_data += packet.s.bcount;
-
-				/*for (int i = 0; i < leds; i++) {
-
-					packet.s.leds[i].g = ((255 - (i * 0xFF / all_leds) + 1) + j*3) % 256; //G
-					packet.s.leds[i].r = 255 - packet.s.leds[i].g; //R
-					packet.s.leds[i].b = 0;// (packet.s.leds[i].r * packet.s.leds[i].g) % 32; //B
-				}*/
-
-				for (int i = 0; i < leds; i++) {
-					if (led_offset == k) {
-						packet.s.leds[i].r = 0x0F;
-						std::cout << "set led @ " << led_offset << std::endl;
-					}
-					else if (led_offset == k + 1)
-						packet.s.leds[i].g = 0x0F;
-					else if (led_offset == k + 2)
-						packet.s.leds[i].b = 0x0F;
-					k++;
-				}
-
-				std::cout << "led offset " << (int)packet.s.boffset << ":" << (int)packet.s.bcount << std::endl;
-				res = usbDevice.SendPacket(packet.buffer);
-				if (res < 0) {
-					std::cerr << "error: " << res << std::endl;
-					return;
-				}
-			}
-
-			led_offset = (led_offset + 1) % all_leds;
-			std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-
-			std::cout << "line " << j << std::endl;
+			__m128i min_val = _mm_min_epu8(_mm_loadu_si128((const __m128i*)&led_data[i]), step128);
+			__m128i val = _mm_sub_epi8(_mm_loadu_si128((const __m128i*)&led_data[i]), min_val);
+			_mm_storeu_si128((__m128i*)&led_data[i], val);
+			
 		}
+		for (; i < led_data.size(); i++) //do unaligned left overs
+		{
+			uint32_t val = led_data[i];
+			uint8_t r = val & 0xFF;
+			uint8_t g = (val >> 8) & 0xFF;
+			uint8_t b = (val >> 16) & 0xFF;
+			r -= min(r, step);
+			g -= min(g, step);
+			b -= min(b, step);
+			led_data[i] = r | (g <<8) | (b <<16);
+		}
+
+		const uint32_t colors[] = { 0x00FF0000, 0x0000FF00, 0x000000FF };
+		led_data[led_offset] = colors[(led_offset % countof(colors))];
+
+		usbDevice.SendRGB(led_data);
+
+		led_offset = (led_offset + 1) % led_data.size();
+		std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 	}
 }
-
 
 int main()
 {
@@ -649,6 +689,8 @@ int main()
 	ite.EnableEffect(true);
 
 	ite.SetAllPorts(EFFECT_PULSE, MakeColor(0xFF, 0x21, 0));
+
+	ite.StartPulseOrFlash(false, 5, 7, 2);
 
 #if _WIN32
 	std::cerr << "\n\n\nPress enter to exit" << std::endl;
