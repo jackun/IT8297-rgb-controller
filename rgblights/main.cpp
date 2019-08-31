@@ -415,8 +415,8 @@ public:
 			led_count = GetLedCount(report.total_leds);
 		}
 
-		memset(buffer, 0, 64);
-		res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x60CC, 0x0000, buffer, 64, 1000);
+		//memset(buffer, 0, 64);
+		//res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x60CC, 0x0000, buffer, 64, 1000);
 
 		res = SendPacket(packet_cc3400); //set led count 0 aka 32
 		res = SendPacket(packet_cc3100); //disable something
