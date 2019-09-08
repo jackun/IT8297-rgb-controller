@@ -803,10 +803,12 @@ int main()
 	UsbIT8297 ite;
 	PktEffect effect;
 
+#if _WIN32
 	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
 		printf("\nERROR: Could not set control handler\n");
 		return 1;
 	}
+#endif
 
 	try
 	{
