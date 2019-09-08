@@ -18,6 +18,23 @@
 #define min std::min
 #endif
 
+bool running = true;
+
+BOOL WINAPI consoleHandler(DWORD signal) {
+
+	switch (signal) {
+	case CTRL_CLOSE_EVENT:
+	case CTRL_BREAK_EVENT:
+	case CTRL_C_EVENT:
+		running = false;
+		break;
+	default:
+		break;
+	}
+
+	return TRUE;
+}
+
 template < typename T, size_t N >
 constexpr size_t countof(T(&arr)[N])
 {
@@ -73,7 +90,7 @@ union PktRGB
 	unsigned char buffer[64];
 	struct RGBData
 	{
-		uint8_t cc;// = 0xCC;
+		uint8_t report_id;// = 0xCC;
 		uint8_t header;// = 0x58 - lower header, 0x59 - upper header;
 		uint16_t boffset;// = 0; // in bytes, absolute
 		uint8_t  bcount;// = 0;
@@ -81,15 +98,15 @@ union PktRGB
 		uint16_t padding0;
 	} s;
 
-	PktRGB()
+	PktRGB(uint8_t hdr = HDR_D_LED1_RGB) : s{ 0 }
 	{
-		Reset();
+		Reset(hdr);
 	}
 
-	void Reset()
+	void Reset(uint8_t hdr)
 	{
-		s.cc = 0xCC;
-		s.header = HDR_D_LED1_RGB; //sending as 0x53, or was it 0x54, screws with color cycle effect
+		s.report_id = 0xCC;
+		s.header = hdr; //sending as 0x53, or was it 0x54, screws with color cycle effect
 		s.boffset = 0;
 		s.bcount = 0;
 		memset(s.leds, 0, sizeof(s.leds));
@@ -123,7 +140,7 @@ union PktEffect
 		uint8_t padding0[30];
 	} e;
 
-	PktEffect()
+	PktEffect() : e { 0 }
 	{
 		Init(0);
 	}
@@ -133,7 +150,7 @@ union PktEffect
 		memset(buffer, 0, sizeof(buffer));
 		e.report_id = 0xCC;
 		e.header = 32 + header; // set as default
-		e.zone0 = pow(2, e.header - 32);
+		e.zone0 = (uint32_t)pow(2, e.header - 32);
 		e.effect_type = EFFECT_STATIC;
 		e.max_brightness = 100;
 		e.min_brightness = 0;
@@ -558,7 +575,7 @@ public:
 		int left_leds = led_data.size();
 
 		while (left_leds > 0) {
-			packet.Reset();
+			packet.Reset(HDR_D_LED1_RGB);
 			leds = min(leds, left_leds);
 			left_leds -= leds;
 
@@ -574,7 +591,7 @@ public:
 				k++;
 			}
 
-			std::cout << "led offset " << (int)packet.s.boffset << ":" << (int)packet.s.bcount << std::endl;
+			//std::cout << "led offset " << (int)packet.s.boffset << ":" << (int)packet.s.bcount << std::endl;
 			res = SendPacket(packet.buffer);
 			if (res < 0) {
 				std::cerr << "error: " << res << std::endl;
@@ -625,30 +642,136 @@ private:
 	uint32_t led_count = 32;
 };
 
+/*! \brief Convert HSV to RGB color space
+
+  Converts a given set of HSV values `h', `s', `v' into RGB
+  coordinates. The output RGB values are in the range [0, 1], and
+  the input HSV values are in the ranges h = [0, 360], and s, v =
+  [0, 1], respectively.
+
+  \param fR Red component, used as output, range: [0, 1]
+  \param fG Green component, used as output, range: [0, 1]
+  \param fB Blue component, used as output, range: [0, 1]
+  \param fH Hue component, used as input, range: [0, 360]
+  \param fS Hue component, used as input, range: [0, 1]
+  \param fV Hue component, used as input, range: [0, 1]
+
+*/
+void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
+	float fC = fV * fS; // Chroma
+	float fHPrime = fmod(fH / 60.0, 6);
+	float fX = fC * (1 - fabs(fmod(fHPrime, 2) - 1));
+	float fM = fV - fC;
+
+	if (0 <= fHPrime && fHPrime < 1) {
+		fR = fC;
+		fG = fX;
+		fB = 0;
+	}
+	else if (1 <= fHPrime && fHPrime < 2) {
+		fR = fX;
+		fG = fC;
+		fB = 0;
+	}
+	else if (2 <= fHPrime && fHPrime < 3) {
+		fR = 0;
+		fG = fC;
+		fB = fX;
+	}
+	else if (3 <= fHPrime && fHPrime < 4) {
+		fR = 0;
+		fG = fX;
+		fB = fC;
+	}
+	else if (4 <= fHPrime && fHPrime < 5) {
+		fR = fX;
+		fG = 0;
+		fB = fC;
+	}
+	else if (5 <= fHPrime && fHPrime < 6) {
+		fR = fC;
+		fG = 0;
+		fB = fX;
+	}
+	else {
+		fR = 0;
+		fG = 0;
+		fB = 0;
+	}
+
+	fR += fM;
+	fG += fM;
+	fB += fM;
+
+	//std::cout << "hue: " << fH << " " << fR << " " << fG << " " << fB << std::endl;
+}
+
+void DoRainbow(UsbDevice& usbDevice)
+{
+	int repeat_count = 1;
+	int delay_ms = 2;
+	float hue = 0;
+	int hue2 = 0;
+	int hue_step = 1;
+	float hue_stretch = .5f;
+	int hue_offset = 0;
+	float r = 0, g = 0, b = 0;
+	//defaults to 32 leds usually
+	std::vector<uint32_t> led_data(120);
+
+	while (running)
+	{
+
+		//hue = hue2;
+		for (size_t i = 0; i < led_data.size(); i++)
+		{
+			// FIXME ewww
+			hue = ((360 - hue_offset) + (360.f / led_data.size()) * i * hue_stretch);
+			hue2 = (int)hue % 360;
+
+			HSVtoRGB(r, g, b, (float)hue2, 1.f, .25f);
+			uint32_t c = ((uint32_t)(b * 255.f) << 16) | ((uint32_t)(g * 255.f) << 8) | (uint32_t)(r * 255.f);
+			led_data[i] = c;
+			//std::cout << "hue: " << hue2 << " " << hue << std::endl;
+		}
+		//hue2 = hue;
+
+		usbDevice.SendRGB(led_data);
+
+		hue_offset = (hue_offset + hue_step) % 360;
+		std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+	}
+}
+
 void DoRGB(UsbDevice& usbDevice)
 {
-	int res;
-
+	int repeat_count = 1;
 	int delay_ms = 10;
 	int led_offset = 0;
 
 	//defaults to 32 leds usually
 	std::vector<uint32_t> led_data(120);
 
+	const uint8_t step = led_data.size() / 60 /* roughly amount of lit leds */;
+	const __m128i step128 = _mm_setr_epi8(step, step, step, 0, step, step, step, 0, step, step, step, 0, step, step, step, 0);
+
+	while(running)
 	//for (int j = 0; j < 5000 / delay_ms; j++) // per 5 seconds or sumfin
-	for (int j = 0; j < led_data.size() * 5; j++)
+	for (int j = 0; j < led_data.size() * repeat_count; j++)
 	{
 		int i;
-		const uint8_t step = 10;
-		const __m128i step128 = _mm_setr_epi8(step, step, step, 0, step, step, step, 0, step, step, step, 0, step, step, step, 0);
+
+		if (!running)
+			break;
 
 		// snake effect, substract step from individual RGB color bytes
 		size_t led_data_size = led_data.size();
 		led_data_size -= led_data_size % 4;
 		for (i = 0; i < led_data_size; i += 4)
 		{
-			__m128i min_val = _mm_min_epu8(_mm_loadu_si128((const __m128i*)&led_data[i]), step128);
-			__m128i val = _mm_sub_epi8(_mm_loadu_si128((const __m128i*)&led_data[i]), min_val);
+			//__m128i min_val = _mm_min_epu8(_mm_loadu_si128((const __m128i*)&led_data[i]), step128);
+			//__m128i val = _mm_sub_epi8(_mm_loadu_si128((const __m128i*) & led_data[i]), min_val);
+			__m128i val = _mm_subs_epu8(_mm_loadu_si128((const __m128i*)&led_data[i]), step128);
 			_mm_storeu_si128((__m128i*)&led_data[i], val);
 			
 		}
@@ -664,7 +787,8 @@ void DoRGB(UsbDevice& usbDevice)
 			led_data[i] = r | (g <<8) | (b <<16);
 		}
 
-		const uint32_t colors[] = { 0x00FF0000, 0x0000FF00, 0x000000FF };
+		//const uint32_t colors[] = { 0x00FF0000, 0x0000FF00, 0x000000FF };
+		const uint32_t colors[] = { 0x00643264, 0x00643232, 0x00646432, 0x00326432, 0x00326464, 0x00323264 };
 		led_data[led_offset] = colors[(led_offset % countof(colors))];
 
 		usbDevice.SendRGB(led_data);
@@ -678,8 +802,11 @@ int main()
 {
 	UsbIT8297 ite;
 	PktEffect effect;
-	int res;
-	struct libusb_device_handle *handle;
+
+	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
+		printf("\nERROR: Could not set control handler\n");
+		return 1;
+	}
 
 	try
 	{
@@ -695,7 +822,8 @@ int main()
 	ite.SetAllPorts(EFFECT_NONE);
 
 	ite.EnableEffect(false);
-	DoRGB(ite);
+	std::cerr << "CTRL + C to stop RGB loop" << std::endl;
+	DoRainbow(ite);
 	ite.EnableEffect(true);
 
 	ite.SetAllPorts(EFFECT_PULSE, MakeColor(0xFF, 0x21, 0));
@@ -703,12 +831,15 @@ int main()
 	ite.StartPulseOrFlash(false, 5, 7, 2, 1200, 1200, 200);
 
 #if _WIN32
-	std::cerr << "\n\n\nPress enter to exit" << std::endl;
+	std::cerr << "\n\n\nPress enter to exit\nPress 's' to stop leds" << std::endl;
 	//if (res < 0)
-		_getch();
-#endif
+		int ch;
+		FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
 
-	//ite.StopAll();
+		ch = _getch();
+		if (ch == 's')
+			ite.StopAll();
+#endif
 
 	return 0;
 }
