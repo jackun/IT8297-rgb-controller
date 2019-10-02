@@ -504,7 +504,7 @@ public:
 		}
 		SendPacket(packet_commit_effect);
 		SendPacket(packet_cc3100);
-		EnableEffect(true); // yeah...
+		DisableEffect(false); // yeah...
 		SendPacket(packet_cc20ff);
 		SendPacket(packet_commit_effect);
 	}
@@ -535,12 +535,12 @@ public:
 		return libusb_control_transfer(handle, 0x21, 0x09, 0x03CC, 0x0000, packet, 64, 1000);
 	}
 
-	bool EnableEffect(bool enable)
+	bool DisableEffect(bool disable)
 	{
 		memset(buffer, 0, sizeof(buffer));
 		buffer[0] = 0xCC;
 		buffer[1] = 0x32;
-		buffer[2] = enable ? 0 : 1;
+		buffer[2] = disable ? 1 : 0;
 		return SendPacket(buffer) == 64;
 	}
 
@@ -831,10 +831,10 @@ int main()
 	ite.SetLedCount(LEDS_256);
 	ite.SetAllPorts(EFFECT_NONE);
 
-	ite.EnableEffect(false);
+	ite.DisableEffect(true);
 	std::cerr << "CTRL + C to stop RGB loop" << std::endl;
 	DoRainbow(ite);
-	ite.EnableEffect(true);
+	ite.DisableEffect(false);
 
 	ite.SetAllPorts(EFFECT_PULSE, MakeColor(0xFF, 0x21, 0));
 
