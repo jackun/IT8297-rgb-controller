@@ -1,7 +1,3 @@
-#if _WIN32
-#include <conio.h>
-#endif
-
 #include <emmintrin.h>
 #include <vector>
 #include <thread>
@@ -18,8 +14,9 @@
 #define min std::min
 #endif
 
+#if _WIN32
+#include <conio.h>
 bool running = true;
-
 BOOL WINAPI consoleHandler(DWORD signal) {
 
 	switch (signal) {
@@ -34,6 +31,14 @@ BOOL WINAPI consoleHandler(DWORD signal) {
 
 	return TRUE;
 }
+#else
+#include <signal.h>
+volatile sig_atomic_t running = 1;
+void sighandler(int sig) {
+	if (sig == SIGINT)
+		running = 0;
+}
+#endif
 
 template < typename T, size_t N >
 constexpr size_t countof(T(&arr)[N])
@@ -76,6 +81,7 @@ enum LEDCount
 	LEDS_1024,
 };
 
+// TODO change order as needed
 struct RGBBytes
 {
 	uint8_t g;
@@ -808,6 +814,8 @@ int main()
 		printf("\nERROR: Could not set control handler\n");
 		return 1;
 	}
+#else
+	signal(SIGINT, sighandler);
 #endif
 
 	try
@@ -841,6 +849,8 @@ int main()
 		ch = _getch();
 		if (ch == 's')
 			ite.StopAll();
+#else
+	ite.StopAll();
 #endif
 
 	return 0;
