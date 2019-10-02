@@ -38,3 +38,4 @@ Debug
 Release
 build*
 .vs
+__pycache__
