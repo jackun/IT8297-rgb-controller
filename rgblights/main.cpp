@@ -257,7 +257,7 @@ public:
 			throw std::runtime_error("Failed to claim interface 0");
 
 		// Most of the start up sequence as RGB Fusion does it
-		res = SendPacket(packet_cc6000);
+		SendPacket(0x60, 0x00);
 
 		// get some HID report, should contain ITE stuff
 		// FIXME vanilla libusb _hid_get_report over allocates buffer and IT8297 no likey
@@ -273,11 +273,12 @@ public:
 		memset(buffer, 0, 64);
 		buffer[0] = 0xCC;
 		buffer[1] = 0x60;
-		res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
+		// get rgb calibration info?
+		//res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
 
-		res = SendPacket(packet_cc3400); //set led count 0 aka 32
-		res = SendPacket(packet_cc3100); //disable something
-		//res = SendPacket(packet_cc2001); // set IO ports LED to pulse
+		SetLedCount(LEDS_32);
+		EnableBeat(false);
+		SetAllPorts(EFFECT_PULSE, 0x00FF2100);
 	}
 
 	// optionally stop effects
@@ -290,11 +291,11 @@ public:
 			buffer[1] = 0x20 + i;
 			SendPacket(buffer);
 		}
-		SendPacket(packet_commit_effect);
-		SendPacket(packet_cc3100);
+		StartEffect();
+		SendPacket(0x31, 0x00);
 		DisableEffect(false); // yeah...
-		SendPacket(packet_cc20ff);
-		SendPacket(packet_commit_effect);
+		SendPacket(0x20, 0xFF); //?
+		StartEffect();
 	}
 
 	~UsbIT8297()
@@ -323,27 +324,35 @@ public:
 		return libusb_control_transfer(handle, 0x21, 0x09, 0x03CC, 0x0000, packet, 64, 1000);
 	}
 
+	bool SendPacket(uint8_t a, uint8_t b, uint8_t c = 0)
+	{
+		memset(buffer, 0, 64);
+		buffer[0] = 0xCC;
+		buffer[1] = a;
+		buffer[2] = b;
+		buffer[3] = c;
+		return SendPacket(buffer) == 64;
+	}
+
 	bool DisableEffect(bool disable)
 	{
-		memset(buffer, 0, sizeof(buffer));
-		buffer[0] = 0xCC;
-		buffer[1] = 0x32;
-		buffer[2] = disable ? 1 : 0;
-		return SendPacket(buffer) == 64;
+		return SendPacket(0x32, disable ? 1 : 0);
 	}
 
 	bool SetLedCount(LEDCount i)
 	{
-		memset(buffer, 0, 64);
-		buffer[0] = 0xCC;
-		buffer[1] = 0x34;
-		buffer[2] = i;
-		return SendPacket(buffer) == 64;
+		return SendPacket(0x34, i);
+	}
+
+	// TODO is beat effect? beat lights leds and then fade out?
+	bool EnableBeat(bool b)
+	{
+		return SendPacket(0x31, b ? 1 : 0);
 	}
 
 	bool StartEffect()
 	{
-		return SendPacket(packet_commit_effect) == 64;
+		return SendPacket(0x28, 0xFF) == 64;
 	}
 
 	bool StartPulseOrFlash(bool pulseOrFlash = false, uint8_t hdr = 5, uint8_t colors = 0, uint8_t repeat = 1, uint16_t p0 = 200, uint16_t p1 = 200, uint16_t p2 = 2200, uint32_t color = 0)
@@ -540,7 +549,7 @@ void DoRainbow(UsbDevice& usbDevice)
 void DoRGB(UsbDevice& usbDevice)
 {
 	int repeat_count = 1;
-	int delay_ms = 10;
+	auto delay = std::chrono::milliseconds(10);
 	int led_offset = 0;
 
 	//defaults to 32 leds usually
@@ -550,7 +559,6 @@ void DoRGB(UsbDevice& usbDevice)
 	const __m128i step128 = _mm_setr_epi8(step, step, step, 0, step, step, step, 0, step, step, step, 0, step, step, step, 0);
 
 	while(running)
-	//for (int j = 0; j < 5000 / delay_ms; j++) // per 5 seconds or sumfin
 	for (int j = 0; j < led_data.size() * repeat_count; j++)
 	{
 		int i;
@@ -588,7 +596,7 @@ void DoRGB(UsbDevice& usbDevice)
 		usbDevice.SendRGB(led_data);
 
 		led_offset = (led_offset + 1) % led_data.size();
-		std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+		std::this_thread::sleep_for(delay);
 	}
 }
 
