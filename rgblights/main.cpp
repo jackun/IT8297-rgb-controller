@@ -291,11 +291,11 @@ public:
 			buffer[1] = 0x20 + i;
 			SendPacket(buffer);
 		}
-		StartEffect();
-		SendPacket(0x31, 0x00);
+		ApplyEffect();
+		EnableBeat(false);
 		DisableEffect(false); // yeah...
 		SendPacket(0x20, 0xFF); //?
-		StartEffect();
+		ApplyEffect();
 	}
 
 	~UsbIT8297()
@@ -339,9 +339,9 @@ public:
 		return SendPacket(0x32, disable ? 1 : 0);
 	}
 
-	bool SetLedCount(LEDCount i)
+	bool SetLedCount(LEDCount s0 = LEDS_32, LEDCount s1 = LEDS_32)
 	{
-		return SendPacket(0x34, i);
+		return SendPacket(0x34, s0 | (s1 <<4));
 	}
 
 	// TODO is beat effect? beat lights leds and then fade out?
@@ -350,9 +350,15 @@ public:
 		return SendPacket(0x31, b ? 1 : 0);
 	}
 
-	bool StartEffect()
+	bool ApplyEffect()
 	{
 		return SendPacket(0x28, 0xFF) == 64;
+	}
+
+	// FIXME doesn't save?
+	bool SaveStateToMCU()
+	{
+		return SendPacket(0x5E, 0x00) == 64;
 	}
 
 	bool StartPulseOrFlash(bool pulseOrFlash = false, uint8_t hdr = 5, uint8_t colors = 0, uint8_t repeat = 1, uint16_t p0 = 200, uint16_t p1 = 200, uint16_t p2 = 2200, uint32_t color = 0)
@@ -367,7 +373,7 @@ public:
 		effect.e.effect_param1 = 0;
 		effect.e.effect_param2 = repeat;
 		int res = SendPacket(effect);
-		return res == 64 && StartEffect();
+		return res == 64 && ApplyEffect();
 	}
 
 	bool SendRGB(const std::vector<uint32_t> &led_data)
@@ -414,7 +420,7 @@ public:
 			effect.e.color0 = color;
 			SendPacket(effect);
 		}
-		StartEffect();
+		ApplyEffect();
 	}
 
 private:

@@ -45,9 +45,14 @@ def makePacket(*args):
         pkt[i] = v
     return pkt
 
+def makeColor(r, g, b):
+    return (r<<16) | (g<<8) | b
+
 class LED(Structure):
     _pack_ = 1
     _fields_ = [("g", c_uint8), ("r", c_uint8), ("b", c_uint8)]
+    def __str__(self):
+        return "<{}({}, {}, {})>".format(self.__class__.__name__, self.r, self.g, self.b)
 
 def get_rgb(leds):
     return list(itertools.chain.from_iterable([x.r, x.g, x.b] for x in leds))
@@ -178,7 +183,7 @@ class Controller:
         #tmpPkt = makePacket(0xCC, 0x60)
         #self.handle.controlWrite(0xA1, 0x09, 0x03CC, 0x0000, tmpPkt)
         
-        self.sendPacket(makePacket(0xCC, 0x31, 0x00))
+        self.enableBeat(False)
         self.disableEffect(False)
         self.setAllPorts(EFFECT_PULSE, 0x00FF2100)
     
@@ -197,8 +202,15 @@ class Controller:
         """
         return self.sendPacket(makePacket(0xCC, 0x32, 1 if b else 0))
     
-    def startEffect(self):
-        return self.sendPacket(makePacket(0xCC, 0x28, 0xFF))
+    def enableBeat(self, b):
+        return self.sendPacket(makePacket(0xCC, 0x31, 1 if b else 0))
+    
+    def applyEffect(self, strip = 0xFF):
+        return self.sendPacket(makePacket(0xCC, 0x28, strip))
+
+    # FIXME suspect
+    def saveStateToMCU(self):
+        return self.sendPacket(makePacket(0xCC, 0x5E)) == 64
     
     def setAllPorts(self, effect = EFFECT_STATIC, color = 0x00FF2100):
         pkt = PktEffect()
@@ -207,9 +219,18 @@ class Controller:
             pkt.effect_param0 = 7
             pkt.effect_param1 = 1
             self.sendPacket(pkt)
-        return self.startEffect()
+        return self.applyEffect()
     
-    def setLedCount(self, e = LEDS_32):
+    def stopAll(self):
+        for i in range(0, 8):
+            self.sendPacket(makePacket(0xCC, 0x20 + i))
+        self.applyEffect()
+        self.enableBeat(False)
+        self.disableEffect(False)
+        self.sendPacket(makePacket(0xCC, 0x20, 0xFF))
+        self.applyEffect()
+    
+    def setLedCount(self, s0 = LEDS_32, s1 = LEDS_32):
         """
         Set the count of maximum individually addressable leds in a block.
         Blocks are repeated, probably up to 1024 leds:
@@ -219,15 +240,16 @@ class Controller:
         3 = 512
         4 = 1024
         """
-        return self.sendPacket(makePacket(0xCC, 0x34, e))
+        return self.sendPacket(makePacket(0xCC, 0x34, s0 | (s1<<4)))
         
-    def sendRGB(self, led_data):
+    def sendRGB(self, led_data, hdr = HDR_D_LED1_RGB):
         pkt = PktRGB()
         sent = 0
         left = len(led_data)
         while left > 0:
-            count = min(19, left)
-            pkt.setup(HDR_D_LED1_RGB, count, sent, led_data[sent:sent+count])
+            count = min(LEDS_MAX_PER_PKT, left)
+            pkt.setup(hdr, sent, count, led_data[sent:sent+count])
             sent += count
-            self.sendPacket(pkt.get_bytes(LEDS_ORDER_GRB))
+            left -= count
+            self.sendPacket(pkt)
 
