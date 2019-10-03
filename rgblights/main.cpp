@@ -82,7 +82,7 @@ enum LEDCount
 };
 
 // TODO change order as needed
-struct RGBBytes
+struct LEDs
 {
 	uint8_t g;
 	uint8_t r;
@@ -100,7 +100,7 @@ union PktRGB
 		uint8_t header;// = 0x58 - lower header, 0x59 - upper header;
 		uint16_t boffset;// = 0; // in bytes, absolute
 		uint8_t  bcount;// = 0;
-		RGBBytes leds[19];
+		LEDs leds[19];
 		uint16_t padding0;
 	} s;
 
