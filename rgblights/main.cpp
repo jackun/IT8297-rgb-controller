@@ -525,6 +525,9 @@ void DoRainbow(UsbDevice& usbDevice)
 	float hue_stretch = .5f;
 	int hue_offset = 0;
 	float r = 0, g = 0, b = 0;
+	bool dir = true;
+	float pulse = 0.1f;
+	float pulse_speed = 0.025f;
 	//defaults to 32 leds usually
 	std::vector<uint32_t> led_data(120);
 
@@ -539,7 +542,7 @@ void DoRainbow(UsbDevice& usbDevice)
 			hue2 = (int)hue % 360;
 
 			HSVtoRGB(r, g, b, (float)hue2, 1.f, .25f);
-			uint32_t c = ((uint32_t)(b * 255.f) << 16) | ((uint32_t)(g * 255.f) << 8) | (uint32_t)(r * 255.f);
+			uint32_t c = ((uint32_t)(b * 255.f * pulse) << 16) | ((uint32_t)(g * 255.f * pulse) << 8) | (uint32_t)(r * 255.f * pulse);
 			led_data[i] = c;
 			//std::cout << "hue: " << hue2 << " " << hue << std::endl;
 		}
@@ -547,6 +550,20 @@ void DoRainbow(UsbDevice& usbDevice)
 
 		usbDevice.SendRGB(led_data);
 
+		if (dir)
+			pulse += pulse_speed;
+		else
+			pulse -= pulse_speed;
+
+		if (pulse < 0.f) {
+			pulse = 0;
+			dir = true;
+		}
+		else if (pulse > 1.f) {
+			pulse = 1;
+			dir = false;
+		}
+		//std::cerr << pulse << std::endl;
 		hue_offset = (hue_offset + hue_step) % 360;
 		std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 	}
