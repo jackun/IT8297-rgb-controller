@@ -44,7 +44,7 @@ for i in range(0, 8):
     pkt.period0 = 1200
     pkt.period1 = 1200
     pkt.period2 = 200
-    pkt.effect_param0 = 7
+    pkt.param0 = 7
     c.sendPacket(pkt)
 c.applyEffect()
 time.sleep(10)
@@ -56,7 +56,7 @@ pkt.setup(it.HDR_D_LED1, it.EFFECT_FLASH)
 pkt.period0 = 100
 pkt.period1 = 100
 pkt.period2 = 1000
-pkt.effect_param0 = 7
+pkt.param0 = 7
 c.sendPacket(pkt)
 c.applyEffect()
 time.sleep(10)

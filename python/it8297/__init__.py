@@ -3,7 +3,7 @@ import struct
 import itertools
 # https://pypi.org/project/libusb1/
 import usb1
-from ctypes import Structure, c_uint, c_ushort, c_uint8
+from ctypes import Structure, c_uint, c_ushort, c_uint8, c_char
 
 #LITTLE_ENDIAN = sys.byteorder == 'little'
 
@@ -113,11 +113,11 @@ class PktEffect(Structure):
         ("period1", c_ushort), # fade out
         ("period2", c_ushort), # hold
         ("period3", c_ushort), # ???
-        ("effect_param0", c_uint8), # colorcycle - how many colors to cycle through (how are they set?)
+        ("param0", c_uint8), # colorcycle - how many colors to cycle through (how are they set?)
                                     # flash - if >0 cycle through N colors
-        ("effect_param1", c_uint8),
-        ("effect_param2", c_uint8), # idk, flash effect repeat count
-        ("effect_param3", c_uint8),
+        ("param1", c_uint8),
+        ("param2", c_uint8), # idk, flash effect repeat count
+        ("param3", c_uint8),
         ("padding0", c_uint8 * 30)
     ]
 
@@ -138,11 +138,11 @@ class PktEffect(Structure):
         self.period1 = 100 # uint16_t - fade out
         self.period2 = 440 # uint16_t - hold
         self.period3 = 0 # uint16_t - ???
-        self.effect_param0 = 1 # uint8_t - colorcycle - how many colors to cycle through (how are they set?)
+        self.param0 = 1 # uint8_t - colorcycle - how many colors to cycle through (how are they set?)
                             # flash - if >0 cycle through N colors
-        self.effect_param1 = 1 # uint8_t - ???
-        self.effect_param2 = 0 # uint8_t - idk, flash effect repeat count
-        self.effect_param3 = 1 # uint8_t - idk
+        self.param1 = 1 # uint8_t - ???
+        self.param2 = 0 # uint8_t - idk, flash effect repeat count
+        self.param3 = 1 # uint8_t - idk
         #uint8_t padding0[30];
 
     def get_bytes(self):
@@ -152,8 +152,26 @@ class PktEffect(Structure):
             self.max_brightness, self.min_brightness,
             self.color0, self.color1,
             self.period0, self.period1, self.period2, self.period3,
-            self.effect_param0, self.effect_param1,
-            self.effect_param2, self.effect_param3)
+            self.param0, self.param1,
+            self.param2, self.param3)
+
+class IT8297_Report(Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("report_id", c_uint8),
+        ("product", c_uint8),
+        ("device_num", c_uint8),
+        ("total_leds", c_uint8), # current setLedCount()?
+        ("fw_ver", c_uint),
+        ("Strip_Ctrl_Length0", c_ushort),
+        ("reserved0", c_ushort),
+        ("str_product", c_char * 32),
+        ("cal_strip0", c_uint),
+        ("cal_strip1", c_uint),
+        ("cal_strip2", c_uint),
+        ("chip_id", c_uint),
+        ("reserved1", c_uint)
+    ]
 
 class Controller:
     
@@ -179,6 +197,12 @@ class Controller:
 
         self.sendPacket(makePacket(0xCC, 0x60, 0x00))
         
+        buff = self.handle.controlRead(0xA1, 0x01, 0x03CC, 0x0000, 64)
+        if len(buff) == 64:
+            self.report = IT8297_Report.from_buffer(buff)
+            print("Product:", self.report.str_product.decode('utf-8'))
+        
+        self.led_count = 0
         self.setLedCount()
         #tmpPkt = makePacket(0xCC, 0x60)
         #self.handle.controlWrite(0xA1, 0x09, 0x03CC, 0x0000, tmpPkt)
@@ -216,8 +240,8 @@ class Controller:
         pkt = PktEffect()
         for hdr in range(0x20, 0x28):
             pkt.setup(hdr, effect, color)
-            pkt.effect_param0 = 7
-            pkt.effect_param1 = 1
+            pkt.param0 = 7
+            pkt.param1 = 1
             self.sendPacket(pkt)
         return self.applyEffect()
     
@@ -230,7 +254,7 @@ class Controller:
         self.sendPacket(makePacket(0xCC, 0x20, 0xFF))
         self.applyEffect()
     
-    def setLedCount(self, s0 = LEDS_32, s1 = LEDS_32):
+    def setLedCount(self, s0 = None, s1 = None):
         """
         Set the count of maximum individually addressable leds in a block.
         Blocks are repeated, probably up to 1024 leds:
@@ -240,7 +264,11 @@ class Controller:
         3 = 512
         4 = 1024
         """
-        return self.sendPacket(makePacket(0xCC, 0x34, s0 | (s1<<4)))
+        if s0:
+            self.led_count = (self.led_count & 0xF0) | s0
+        if s1:
+            self.led_count = (self.led_count & 0x0F) | (s1 << 4)
+        return self.sendPacket(makePacket(0xCC, 0x34, self.led_count))
         
     def sendRGB(self, led_data, hdr = HDR_D_LED1_RGB):
         pkt = PktRGB()
