@@ -192,7 +192,7 @@ class Controller:
         if self.handle is None:
             raise usb1.USBErrorNotFound('Device not found or wrong permissions')
         
-        self.handle.setAutoDetachKernelDriver(True) # needed? probably in use by "hid"
+        #self.handle.setAutoDetachKernelDriver(True) # needed? probably in use by "hid"
         self.handle.claimInterface(0)
 
         self.sendPacket(makePacket(0xCC, 0x60, 0x00))
