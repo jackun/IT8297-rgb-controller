@@ -176,7 +176,7 @@ struct IT8297_Report
 	uint8_t device_num;
 	uint8_t total_leds;
 	uint32_t fw_ver;
-	uint16_t Strip_Ctrl_Length0;
+	uint16_t curr_led_count;
 	uint16_t reserved0;
 	char str_product[32];
 	uint32_t cal_strip0;
@@ -257,6 +257,7 @@ public:
 			throw std::runtime_error("Failed to claim interface 0");
 
 		// Most of the start up sequence as RGB Fusion does it
+		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
 		SendPacket(0x60, 0x00);
 
 		// get some HID report, should contain ITE stuff
@@ -548,7 +549,8 @@ void DoRainbow(UsbDevice& usbDevice)
 		}
 		//hue2 = hue;
 
-		usbDevice.SendRGB(led_data);
+		if (!usbDevice.SendRGB(led_data))
+			return;
 
 		if (dir)
 			pulse += pulse_speed;
@@ -616,7 +618,8 @@ void DoRGB(UsbDevice& usbDevice)
 		const uint32_t colors[] = { 0x00643264, 0x00643232, 0x00646432, 0x00326432, 0x00326464, 0x00323264 };
 		led_data[led_offset] = colors[(led_offset % countof(colors))];
 
-		usbDevice.SendRGB(led_data);
+		if (!usbDevice.SendRGB(led_data))
+			return;
 
 		led_offset = (led_offset + 1) % led_data.size();
 		std::this_thread::sleep_for(delay);
