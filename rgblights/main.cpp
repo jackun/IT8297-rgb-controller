@@ -226,15 +226,7 @@ void dump(unsigned char (&buf)[buf_sz], int count)
 	printf("\n");
 }
 
-class UsbDevice
-{
-public:
-	virtual void Init() = 0;
-	virtual int SendPacket(unsigned char *packet) = 0;
-	virtual bool SendRGB(const std::vector<uint32_t> &led_data) = 0;
-};
-
-class UsbIT8297 : public UsbDevice
+class UsbIT8297
 {
 public:
 	UsbIT8297()
@@ -377,7 +369,7 @@ public:
 		return res == 64 && ApplyEffect();
 	}
 
-	bool SendRGB(const std::vector<uint32_t> &led_data)
+	bool SendRGB(const std::vector<uint32_t> &led_data, uint8_t hdr = HDR_D_LED1_RGB)
 	{
 		PktRGB packet;
 		int sent_data = 0, res, k = 0;
@@ -385,7 +377,7 @@ public:
 		int left_leds = led_data.size();
 
 		while (left_leds > 0) {
-			packet.Reset(HDR_D_LED1_RGB);
+			packet.Reset(hdr);
 			leds = min(leds, left_leds);
 			left_leds -= leds;
 
@@ -516,7 +508,7 @@ void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
 	//std::cout << "hue: " << fH << " " << fR << " " << fG << " " << fB << std::endl;
 }
 
-void DoRainbow(UsbDevice& usbDevice)
+void DoRainbow(UsbIT8297& usbDevice)
 {
 	int repeat_count = 1;
 	int delay_ms = 2;
@@ -571,7 +563,7 @@ void DoRainbow(UsbDevice& usbDevice)
 	}
 }
 
-void DoRGB(UsbDevice& usbDevice)
+void DoRGB(UsbIT8297& usbDevice)
 {
 	int repeat_count = 1;
 	auto delay = std::chrono::milliseconds(10);
