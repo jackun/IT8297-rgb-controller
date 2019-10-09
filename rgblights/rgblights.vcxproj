@@ -139,6 +139,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Window.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="rgblights.rc" />
