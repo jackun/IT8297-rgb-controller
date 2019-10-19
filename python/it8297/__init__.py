@@ -163,12 +163,12 @@ class IT8297_Report(Structure):
         ("device_num", c_uint8),
         ("total_leds", c_uint8), # current setLedCount()?
         ("fw_ver", c_uint),
-        ("Strip_Ctrl_Length0", c_ushort),
+        ("ctrlLength", c_ushort), # ???
         ("reserved0", c_ushort),
-        ("str_product", c_char * 32),
-        ("cal_strip0", c_uint),
-        ("cal_strip1", c_uint),
-        ("cal_strip2", c_uint),
+        ("str_product", c_char * 32), # might be 28, and extra byteorder3
+        ("byteorder0", c_uint),
+        ("byteorder1", c_uint),
+        ("byteorder2", c_uint),
         ("chip_id", c_uint),
         ("reserved1", c_uint)
     ]
@@ -176,6 +176,8 @@ class IT8297_Report(Structure):
 class Controller:
     
     def __init__(self, context = None):
+        self.report = None
+        self.led_count = 0
         self.owns_context = False
         if context:
             self.context = context
@@ -199,12 +201,24 @@ class Controller:
         
         self.sendPacket(makePacket(0xCC, 0x60, 0x00))
         
+        self.led_order0 = LED(2, 1, 0) #TODO
+        self.led_order1 = LED(2, 1, 0)
         buff = self.handle.controlRead(0xA1, 0x01, 0x03CC, 0x0000, 64)
         if len(buff) == 64:
             self.report = IT8297_Report.from_buffer(buff)
             print("Product:", self.report.str_product.decode('utf-8'))
-        
-        self.led_count = 0
+            self.led_order0.r = (self.report.byteorder0 >> 16) & 0xFF
+            self.led_order0.g = (self.report.byteorder0 >> 8) & 0xFF
+            self.led_order0.b = self.report.byteorder0 & 0xFF
+            if self.report.chip_id == 0x82970100: # BX version
+                self.led_order1.r = (self.report.byteorder1 >> 16) & 0xFF
+                self.led_order1.g = (self.report.byteorder1 >> 8) & 0xFF
+                self.led_order1.b = self.report.byteorder1 & 0xFF
+            else: # AX version
+                self.led_order0.r = (self.report.byteorder0 >> 16) & 0xFF
+                self.led_order0.g = (self.report.byteorder0 >> 8) & 0xFF
+                self.led_order0.b = self.report.byteorder0 & 0xFF
+
         self.setLedCount()
         #tmpPkt = makePacket(0xCC, 0x60)
         #self.handle.controlWrite(0xA1, 0x09, 0x03CC, 0x0000, tmpPkt)
@@ -266,10 +280,16 @@ class Controller:
         3 = 512
         4 = 1024
         """
-        if s0:
-            self.led_count = (self.led_count & 0xF0) | s0
-        if s1:
-            self.led_count = (self.led_count & 0x0F) | (s1 << 4)
+        if self.report and self.report.chip_id != 0x82970100: #AX, maybe
+            if s0:
+                self.led_count = (self.report.ctrlLength & 0xF0) | s0
+            elif s1:
+                self.led_count = (self.report.ctrlLength & 0x0F) | (s1 << 4)
+        else:
+            if s0:
+                self.led_count = (self.led_count & 0xF0) | s0
+            if s1:
+                self.led_count = (self.led_count & 0x0F) | (s1 << 4)
         return self.sendPacket(makePacket(0xCC, 0x34, self.led_count))
         
     def sendRGB(self, led_data, hdr = HDR_D_LED1_RGB):

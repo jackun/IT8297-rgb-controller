@@ -185,10 +185,10 @@ struct IT8297_Report
 	uint32_t fw_ver;
 	uint16_t curr_led_count;
 	uint16_t reserved0;
-	char str_product[32];
-	uint32_t cal_strip0;
-	uint32_t cal_strip1;
-	uint32_t cal_strip2;
+	char str_product[32]; // might be 28 and an extra byteorder3
+	uint32_t byteorder0;
+	uint32_t byteorder1;
+	uint32_t byteorder2;
 	uint32_t chip_id;
 	uint32_t reserved1;
 };
