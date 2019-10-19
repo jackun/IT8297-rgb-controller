@@ -16,12 +16,13 @@ using ms = std::chrono::milliseconds;
 #define min std::min
 #endif
 
+bool pause = false;
+
 #if _WIN32
 #include <conio.h>
 #include "Window.h"
 
 bool running = true;
-bool pause = false;
 
 BOOL WINAPI consoleHandler(DWORD signal) {
 
@@ -249,6 +250,9 @@ public:
 
 		if (!handle)
 			throw std::runtime_error("Failed to open device");
+
+		if (libusb_has_capability(LIBUSB_CAP_SUPPORTS_DETACH_KERNEL_DRIVER))
+			libusb_set_auto_detach_kernel_driver(handle, 1);
 
 		res = libusb_claim_interface(handle, 0);
 		if (res != LIBUSB_SUCCESS)
