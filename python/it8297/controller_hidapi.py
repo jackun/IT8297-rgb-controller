@@ -6,6 +6,7 @@ class Controller_hidapi(Controller):
     def __init__(self, context = None):
         super().__init__()
         
+        self.device = None
         device_list = hid.enumerate(VENDOR_ID, PRODUCT_ID)
         if len(device_list) == 0:
             raise Exception("No devices found")
@@ -39,7 +40,8 @@ class Controller_hidapi(Controller):
         self._startup()
     
     def __del__(self):
-        self.device.close()
+        if self.device:
+            self.device.close()
     
     def sendPacket(self, data):
         if not isinstance(data, bytearray):
