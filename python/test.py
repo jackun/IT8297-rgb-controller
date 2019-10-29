@@ -2,7 +2,8 @@ import it8297 as it
 import time
 import sys
 
-c = it.Controller()
+#c = it.Controller_libusb()
+c = it.Controller_hidapi()
 
 # end it
 if sys.argv[-1] == "-s":
