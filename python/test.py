@@ -9,7 +9,7 @@ if sys.argv[-1] == "-s":
     c.stopAll()
     sys.exit(0)
 
-c.setLedCount(it.LEDS_32) # 32 led blocks (up to 1024?)
+c.setLedCount(it.LEDS_32) # 32-leds blocks (up to 1024?), effect repeats after every Nth led
 
 def pulse(c, m = 8, s = 5):
     print("pulse")
@@ -39,22 +39,11 @@ def flash(c, s = 10):
 def static(c, s = 3):
     print("transition between statics")
     pkt = it.PktEffect()
-    for i in range(0, 8):
-        pkt.setup(0x20 + i, it.EFFECT_STATIC, 0x21FF00)
-        pkt.period0 = 1000
-        c.sendPacket(pkt)
-        c.applyEffect()
-    time.sleep(s)
-    for i in range(0, 8):
-        pkt.setup(0x20 + i, it.EFFECT_STATIC, 0x002064)
-        pkt.period0 = 1000
-        c.sendPacket(pkt)
-        c.applyEffect()
-    time.sleep(s)
-    for i in range(0, 8):
-        pkt.setup(0x20 + i, it.EFFECT_STATIC, 0xFF2100)
-        pkt.period0 = 1000
-        c.sendPacket(pkt)
+    for color in [0x21FF00, 0x002064, 0xFF2100]:
+        for i in range(0, 8):
+            pkt.setup(0x20 + i, it.EFFECT_STATIC, color)
+            pkt.period0 = 1000
+            c.sendPacket(pkt)
         c.applyEffect()
         time.sleep(s)
 
