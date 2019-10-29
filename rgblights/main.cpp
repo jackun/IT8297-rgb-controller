@@ -654,7 +654,7 @@ int main()
 		pause = true;
 		PktEffect pkt;
 		pkt.Init(HDR_D_LED1);
-		pkt.e.effect_type == EFFECT_STATIC;
+		pkt.e.effect_type = EFFECT_STATIC;
 		pkt.e.color0 = 0;
 		ite.SendPacket(pkt);
 		ite.ApplyEffect();
