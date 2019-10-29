@@ -46,4 +46,4 @@ class Controller_hidapi(Controller):
     def sendPacket(self, data):
         if not isinstance(data, bytearray):
             data = bytearray(data)
-        return self.device.write(data)
+        return self.device.send_feature_report(data)
