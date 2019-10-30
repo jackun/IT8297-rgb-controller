@@ -82,8 +82,6 @@ try:
 except KeyboardInterrupt as e:
     c.disableEffect(False)
 
-print("save MCU:", c.saveStateToMCU())
-
 flash(c)
 static(c)
 
