@@ -8,9 +8,30 @@
 #include <cstring>
 #include <string>
 #include <iostream>
-#include <libusb.h>
 
 using ms = std::chrono::milliseconds;
+
+//#define HAVE_LIBUSB 1
+//#define HAVE_HIDAPI 1
+
+#if defined(HAVE_LIBUSB) || defined(HAVE_HIDAPI)
+	#if defined(HAVE_LIBUSB)
+		#include <libusb.h>
+	#endif
+	#if defined(HAVE_HIDAPI)
+		#include <hidapi.h>
+	#endif
+
+	#if defined(HAVE_LIBUSB)
+		class UsbIT8297_libusb;
+		using UsbIT8297 = UsbIT8297_libusb;
+	#elif defined(HAVE_HIDAPI)
+		class UsbIT8297_hidapi;
+		using UsbIT8297 = UsbIT8297_hidapi;
+	#endif
+#else
+#error No backend defined. Define HAVE_LIBUSB or HAVE_HIDAPI.
+#endif
 
 #ifndef min
 #define min std::min
@@ -233,56 +254,18 @@ void dump(unsigned char (&buf)[buf_sz], int count)
 	printf("\n");
 }
 
-class UsbIT8297
+class UsbIT8297Base
 {
 public:
-	UsbIT8297()
+	UsbIT8297Base()
 	{
 	}
 
-	void Init()
-	{
-		int res = libusb_init(&ctx);
-		if (res != LIBUSB_SUCCESS)
-			throw std::runtime_error("Failed to init libusb");
+	virtual ~UsbIT8297Base() {}
 
-		handle = libusb_open_device_with_vid_pid(ctx, 0x048D, 0x8297);
+	virtual void Init() = 0;
 
-		if (!handle)
-			throw std::runtime_error("Failed to open device");
-
-		if (libusb_has_capability(LIBUSB_CAP_SUPPORTS_DETACH_KERNEL_DRIVER))
-			libusb_set_auto_detach_kernel_driver(handle, 1);
-
-		res = libusb_claim_interface(handle, 0);
-		if (res != LIBUSB_SUCCESS)
-			throw std::runtime_error("Failed to claim interface 0");
-
-		// Most of the start up sequence as RGB Fusion does it
-		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
-		SendPacket(0x60, 0x00);
-
-		// get some HID report, should contain ITE stuff
-		// FIXME vanilla libusb _hid_get_report over allocates buffer and IT8297 no likey
-		res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
-		if (res > 0) // max 32 byte string?
-		{
-			report = *reinterpret_cast<IT8297_Report *>(buffer);
-			std::string prod(report.str_product, 32);
-			std::cout << "Device: " << prod << std::endl;
-			led_count = GetLedCount(report.total_leds);
-		}
-
-		memset(buffer, 0, 64);
-		buffer[0] = 0xCC;
-		buffer[1] = 0x60;
-		// get rgb calibration info?
-		//res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
-
-		SetLedCount(LEDS_32);
-		EnableBeat(false);
-		SetAllPorts(EFFECT_PULSE, 0x00FF2100);
-	}
+	virtual int SendPacket(unsigned char *packet) = 0;
 
 	// optionally stop effects
 	void StopAll()
@@ -301,30 +284,9 @@ public:
 		ApplyEffect();
 	}
 
-	~UsbIT8297()
-	{
-		if (handle)
-		{
-			int res = libusb_release_interface(handle, 0);
-			libusb_close(handle);
-			handle = nullptr;
-		}
-
-		if (ctx)
-		{
-			libusb_exit(ctx);
-			ctx = nullptr;
-		}
-	}
-
 	int SendPacket(PktEffect &packet)
 	{
 		return SendPacket(packet.buffer);
-	}
-
-	int SendPacket(unsigned char *packet)
-	{
-		return libusb_control_transfer(handle, 0x21, 0x09, 0x03CC, 0x0000, packet, 64, 1000);
 	}
 
 	bool SendPacket(uint8_t a, uint8_t b, uint8_t c = 0)
@@ -426,7 +388,15 @@ public:
 		ApplyEffect();
 	}
 
-private:
+protected:
+
+	// some basic startup sequences
+	void Startup()
+	{
+		SetLedCount(LEDS_32);
+		EnableBeat(false);
+		SetAllPorts(EFFECT_PULSE, 0x00FF2100);
+	}
 
 	uint32_t GetLedCount(uint32_t c)
 	{
@@ -447,12 +417,153 @@ private:
 		}
 	}
 
-	struct libusb_device_handle *handle = nullptr;
-	struct libusb_context *ctx = nullptr;
 	unsigned char buffer[64];
 	IT8297_Report report;
 	uint32_t led_count = 32;
 };
+
+#ifdef HAVE_LIBUSB
+class UsbIT8297_libusb : public UsbIT8297Base
+{
+public:
+	UsbIT8297_libusb()
+	{
+	}
+
+	virtual void Init()
+	{
+		int res = libusb_init(&ctx);
+		if (res != LIBUSB_SUCCESS)
+			throw std::runtime_error("Failed to init libusb");
+
+		handle = libusb_open_device_with_vid_pid(ctx, VID, PID);
+
+		if (!handle)
+			throw std::runtime_error("Failed to open device");
+
+		if (libusb_has_capability(LIBUSB_CAP_SUPPORTS_DETACH_KERNEL_DRIVER))
+			libusb_set_auto_detach_kernel_driver(handle, 1);
+
+		res = libusb_claim_interface(handle, 0);
+		if (res != LIBUSB_SUCCESS)
+			throw std::runtime_error("Failed to claim interface 0");
+
+		// Most of the start up sequence as RGB Fusion does it
+		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
+		UsbIT8297Base::SendPacket(0x60, 0x00);
+
+		// get some HID report, should contain ITE stuff
+		// FIXME probably should be get_feature_report
+		res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
+		if (res > 0) // max 32 byte string?
+		{
+			report = *reinterpret_cast<IT8297_Report *>(buffer);
+			std::string prod(report.str_product, 32);
+			std::cout << "Device: " << prod << std::endl;
+			led_count = GetLedCount(report.total_leds);
+		}
+
+		memset(buffer, 0, 64);
+		buffer[0] = 0xCC;
+		buffer[1] = 0x60;
+		// get rgb calibration info?
+		//res = libusb_control_transfer(handle, 0x21 | LIBUSB_ENDPOINT_IN, 0x01, 0x03CC, 0x0000, buffer, 64, 1000);
+
+		Startup();
+	}
+
+	virtual ~UsbIT8297_libusb()
+	{
+		if (handle)
+		{
+			int res = libusb_release_interface(handle, 0);
+			libusb_close(handle);
+			handle = nullptr;
+		}
+
+		if (ctx)
+		{
+			libusb_exit(ctx);
+			ctx = nullptr;
+		}
+	}
+
+	virtual int SendPacket(unsigned char *packet)
+	{
+		return libusb_control_transfer(handle, 0x21, 0x09, 0x03CC, 0x0000, packet, 64, 1000);
+	}
+
+private:
+	struct libusb_device_handle *handle = nullptr;
+	struct libusb_context *ctx = nullptr;
+};
+#endif
+
+#ifdef HAVE_HIDAPI
+class UsbIT8297_hidapi : public UsbIT8297Base
+{
+public:
+	UsbIT8297_hidapi()
+	{
+	}
+
+	virtual void Init()
+	{
+		int res = hid_init();
+		if (res < 0)
+			throw std::runtime_error("Failed to init hid");
+
+		hid_device_info *device_list = hid_enumerate(VID, PID);
+
+		if (!device_list)
+			throw std::runtime_error("No devices found");
+
+		std::cerr << "Device path: " << device_list->path << std::endl;
+		device = hid_open_path(device_list->path);
+		hid_free_enumeration(device_list);
+
+		if (!device)
+			throw std::runtime_error("Failed to open device");
+
+		// Most of the start up sequence as RGB Fusion does it
+		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
+		UsbIT8297Base::SendPacket(0x60, 0x00);
+
+		// get some HID report, should contain ITE stuff
+		memset(buffer, 0, 64);
+		buffer[0] = 0xCC;
+		res = hid_get_feature_report(device, buffer, sizeof(buffer));
+		if (res > 0) // max 32 byte string?
+		{
+			report = *reinterpret_cast<IT8297_Report *>(buffer);
+			std::string prod(report.str_product, 32);
+			std::cerr << "Device: " << prod << std::endl;
+			led_count = GetLedCount(report.total_leds);
+		}
+
+		Startup();
+	}
+
+	virtual ~UsbIT8297_hidapi()
+	{
+		if (device)
+		{
+			hid_close(device);
+			device = nullptr;
+		}
+		hid_exit();
+	}
+
+	virtual int SendPacket(unsigned char *packet)
+	{
+		//return hid_write(device, packet, 64);
+		return hid_send_feature_report(device, packet, 64);
+	}
+
+private:
+	hid_device *device = nullptr;
+};
+#endif
 
 /*! \brief Convert HSV to RGB color space
 
