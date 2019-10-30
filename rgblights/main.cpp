@@ -751,8 +751,8 @@ void DoRGB(UsbIT8297& usbDevice)
 
 int main()
 {
-	UsbIT8297 ite;
 	PktEffect effect;
+	UsbIT8297 ite;
 
 #if _WIN32
 	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
@@ -794,16 +794,13 @@ int main()
 	}
 
 	ite.SetLedCount(LEDS_256);
-	ite.SetAllPorts(EFFECT_NONE);
+	for (int hdr=0; hdr<8; hdr++)
+		ite.StartPulseOrFlash(false, hdr, 7, 2, 1200, 1200, 200);
 
 	ite.DisableEffect(true);
 	std::cerr << "CTRL + C to stop RGB loop" << std::endl;
 	DoRainbow(ite);
 	ite.DisableEffect(false);
-
-	ite.SetAllPorts(EFFECT_PULSE, MakeColor(0xFF, 0x21, 0));
-
-	ite.StartPulseOrFlash(false, 5, 7, 2, 1200, 1200, 200);
 
 #if _WIN32
 	std::cerr << "\n\n\nPress enter to exit\nPress 's' to stop leds" << std::endl;
