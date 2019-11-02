@@ -426,6 +426,7 @@ protected:
 class UsbIT8297_libusb : public UsbIT8297Base
 {
 public:
+	using UsbIT8297Base::SendPacket;
 	UsbIT8297_libusb()
 	{
 	}
@@ -450,7 +451,7 @@ public:
 
 		// Most of the start up sequence as RGB Fusion does it
 		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
-		UsbIT8297Base::SendPacket(0x60, 0x00);
+		SendPacket(0x60, 0x00);
 
 		// get some HID report, should contain ITE stuff
 		// FIXME probably should be get_feature_report
@@ -503,6 +504,7 @@ private:
 class UsbIT8297_hidapi : public UsbIT8297Base
 {
 public:
+	using UsbIT8297Base::SendPacket;
 	UsbIT8297_hidapi()
 	{
 	}
@@ -527,7 +529,7 @@ public:
 
 		// Most of the start up sequence as RGB Fusion does it
 		// hid report read needs 0x60 packet or it gives io error. resets mcu or...?
-		UsbIT8297Base::SendPacket(0x60, 0x00);
+		SendPacket(0x60, 0x00);
 
 		// get some HID report, should contain ITE stuff
 		memset(buffer, 0, 64);
