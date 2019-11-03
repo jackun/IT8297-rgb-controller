@@ -417,8 +417,8 @@ protected:
 		}
 	}
 
-	unsigned char buffer[64];
-	IT8297_Report report;
+	unsigned char buffer[64]{};
+	IT8297_Report report{};
 	uint32_t led_count = 32;
 };
 
