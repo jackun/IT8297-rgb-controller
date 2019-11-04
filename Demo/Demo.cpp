@@ -1,9 +1,7 @@
 #include <emmintrin.h>
 #include <thread>
-#include <algorithm>
 #include <chrono>
 #include <iostream>
-#include <cstdio>
 #include <cstring>
 #include <rgblights.h>
 
