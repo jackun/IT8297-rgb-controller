@@ -79,7 +79,7 @@ class PktRGB(Structure):
         self.header = hdr; # 0x58 - lower header, 0x59 - upper header;
         self.boffset = offset * 3 # in bytes, absolute
         self.bcount = count * 3
-        self.leds = (LED * LEDS_MAX_PER_PKT)(*leds) #FIXME copy non-length-matching array
+        self.leds = (LED * LEDS_MAX_PER_PKT)(*leds)
         self.padding0 = 0
     
     def get_bytes(self, order = LEDS_ORDER_GRB):
