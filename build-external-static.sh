@@ -7,7 +7,7 @@ fi
 g++ -o rgblights.lnx \
 	rgblights/rgblights.cpp \
 	Demo/Demo.cpp \
-	-I./rgblights -DIMPORT_INCLUDES \
+	-I./rgblights \
 	-I./external/libusb/libusb \
 	-L./external/libusb/bin/lib \
 	-Wl,-Bstatic -lusb-1.0 \

@@ -5,30 +5,11 @@
 #include <vector>
 #include <algorithm>
 
-//#define HAVE_LIBUSB 1
-//#define HAVE_HIDAPI 1
+struct libusb_device_handle;
+struct libusb_context;
 
-
-#if defined(HAVE_LIBUSB) || defined(HAVE_HIDAPI)
-#if defined(HAVE_LIBUSB)
-#ifdef IMPORT_INCLUDES
-	#include <libusb.h>
-#else
-	struct libusb_device_handle;
-	struct libusb_context;
-#endif
-
-#endif
-#if defined(HAVE_HIDAPI)
-#ifdef IMPORT_INCLUDES
-	#include <hidapi.h>
-#else
-	struct hid_device;
-#endif
-#endif
-#else
-#error No backend defined. Define HAVE_LIBUSB or HAVE_HIDAPI.
-#endif
+struct hid_device_;
+typedef struct hid_device_ hid_device;
 
 namespace rgblights {
 

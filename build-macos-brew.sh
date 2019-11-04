@@ -14,7 +14,7 @@ if [ ! -d /usr/local/Cellar/libusb/$LIBUSB_VER/include/libusb-1.0 ];then
 fi
 
 echo Building...
-llvm-g++ -o $OUT rgblights/rgblights.cpp Demo/Demo.cpp -I./rgblights -DIMPORT_INCLUDES \
+llvm-g++ -o $OUT rgblights/rgblights.cpp Demo/Demo.cpp -I./rgblights \
        -std=c++11 -lusb-1.0 \
        -I/usr/local/Cellar/libusb/$LIBUSB_VER/include/libusb-1.0 && \
        echo OK. Run it with \"./$OUT\" || echo failed

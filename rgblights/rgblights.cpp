@@ -2,6 +2,20 @@
 #include <string>
 #include <iostream>
 
+//#define HAVE_LIBUSB 1
+//#define HAVE_HIDAPI 1
+
+#if defined(HAVE_LIBUSB) || defined(HAVE_HIDAPI)
+#if defined(HAVE_LIBUSB)
+	#include <libusb.h>
+#endif
+#if defined(HAVE_HIDAPI)
+	#include <hidapi.h>
+#endif
+#else
+#error No backend defined. Define HAVE_LIBUSB or HAVE_HIDAPI.
+#endif
+
 namespace rgblights {
 	uint32_t MakeColor(uint8_t r, uint8_t g, uint8_t b)
 	{
