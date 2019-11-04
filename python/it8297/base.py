@@ -82,13 +82,13 @@ class PktRGB(Structure):
         self.leds = (LED * LEDS_MAX_PER_PKT)(*leds) #FIXME copy non-length-matching array
         self.padding0 = 0
     
-    def get_bytes(self, order = LEDS_ORDER_RGB):
-        if order == LEDS_ORDER_RGB:
-            leds = get_rgb(self.leds)
-        elif order == LEDS_ORDER_GRB:
+    def get_bytes(self, order = LEDS_ORDER_GRB):
+        if order == LEDS_ORDER_GRB:
             leds = get_grb(self.leds)
-        elif order == LEDS_ORDER_BGR:
+        elif order == LEDS_ORDER_RGB:
             leds = get_rgb(self.leds)
+        elif order == LEDS_ORDER_BGR:
+            leds = get_bgr(self.leds)
         
         return struct.pack("<BBHB%sB%sx" % (self.bcount, 2 + (57-self.bcount),),
             self.report_id, self.header, self.boffset, self.bcount,
