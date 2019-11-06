@@ -126,7 +126,7 @@ void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
 void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 {
 	int repeat_count = 1;
-	int delay_ms = 2;
+	int delay_ms = 16; // 16 - limit refresh to ~60fps, seems max is about 100 leds with libusb
 	float hue = 0;
 	int hue2 = 0;
 	int hue_step = 1;
@@ -146,6 +146,7 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 			std::this_thread::sleep_for(ms(1500));
 			continue;
 		}
+		auto curr = std::chrono::high_resolution_clock::now();
 		//hue = hue2;
 		for (size_t i = 0; i < led_data.size(); i++)
 		{
@@ -178,7 +179,10 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 		}
 		//std::cerr << pulse << std::endl;
 		hue_offset = (hue_offset + hue_step) % 360;
-		std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+		auto dur = std::chrono::duration_cast<ms>(std::chrono::high_resolution_clock::now() - curr).count();
+		//std::cerr << "Duration: " << dur << "ms, sleep " << std::max(delay_ms - dur, 0ll) << "ms" << std::endl;
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms - dur, 0ll)));
 	}
 }
 
