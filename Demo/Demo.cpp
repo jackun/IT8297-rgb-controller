@@ -364,7 +364,7 @@ int main(int argc, char* const * argv)
 
 #if _WIN32
 	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
-		printf("\nERROR: Could not set control handler\n");
+		std::cerr << "\nERROR: Could not set control handler\n" << std::endl;
 		return 1;
 	}
 
@@ -442,6 +442,7 @@ int main(int argc, char* const * argv)
 			ite.DisableEffect(false);
 			break;
 		case 's':
+			std::cout << "Stopping all" << std::endl;
 			ite.StopAll();
 			break;
 		case '?':
