@@ -317,7 +317,7 @@ void PrintUsage()
 {
 	std::cerr << "Usage:\n"
 	"    Arguments are sparsed in sequence.\n"
-	"    Ex. use '-l 120 -a 1,16720128 -r -s' to set all ports to pulsing orange, run RGB effect and then stop all effects after quiting.\n\n"
+	"    Ex. use '-l 120 -a 2,16720128 -r -s' to set all ports to pulsing orange (0xFF2100), run RGB effect and then stop all effects after quiting.\n\n"
 	"    -a <effect,color>\tset all ports to effect\n"
 	"    -e <header,effect type[,other,params]>\t set built-in effect (comma separated arguments)\n"
 	"    \theader\n"
