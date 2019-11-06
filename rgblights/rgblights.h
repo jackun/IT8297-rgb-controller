@@ -151,7 +151,10 @@ namespace rgblights {
 		{
 			memset(buffer, 0, sizeof(buffer));
 			e.report_id = 0xCC;
-			e.header = 32 + header; // set as default
+			if (header < 8)
+				e.header = 32 + header; // set as default
+			else
+				e.header = header;
 			e.zone0 = (uint32_t)pow(2, e.header - 32);
 			e.effect_type = EFFECT_STATIC;
 			e.max_brightness = 100;
