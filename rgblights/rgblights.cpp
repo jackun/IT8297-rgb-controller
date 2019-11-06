@@ -114,6 +114,8 @@ namespace rgblights {
 			effect.Init(i);
 			effect.e.effect_type = type;
 			effect.e.color0 = color;
+			if (type == EFFECT_COLORCYCLE)
+				effect.e.effect_param0 = 7;
 			SendPacket(effect);
 		}
 		ApplyEffect();

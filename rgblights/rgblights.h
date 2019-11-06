@@ -160,8 +160,10 @@ namespace rgblights {
 			e.period0 = 1200;
 			e.period1 = 1200;
 			e.period2 = 200;
-			e.effect_param0 = 0;
-			e.effect_param1 = 1;
+			e.effect_param0 = 0; // ex color count to cycle through (max seems to be 7)
+			e.effect_param1 = 0;
+			e.effect_param2 = 1; // ex flash repeat count
+			e.effect_param3 = 0;
 		}
 #endif
 	};
