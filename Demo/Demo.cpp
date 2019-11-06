@@ -3,7 +3,14 @@
 #include <chrono>
 #include <iostream>
 #include <cstring>
+#include <sstream>
 #include <rgblights.h>
+
+#if _WIN32
+#include "wgetopt.h"
+#else
+#include <getopt.h>
+#endif
 
 using namespace rgblights;
 using ms = std::chrono::milliseconds;
@@ -116,7 +123,7 @@ void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
 	//std::cout << "hue: " << fH << " " << fR << " " << fG << " " << fB << std::endl;
 }
 
-void DoRainbow(UsbIT8297& usbDevice)
+void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 {
 	int repeat_count = 1;
 	int delay_ms = 2;
@@ -131,7 +138,7 @@ void DoRainbow(UsbIT8297& usbDevice)
 	float pulse_min = 0.1f;
 	float pulse_speed = 0.01f;
 	//defaults to 32 leds usually
-	std::vector<uint32_t> led_data(120);
+	std::vector<uint32_t> led_data(led_count);
 
 	while (running)
 	{
@@ -175,7 +182,7 @@ void DoRainbow(UsbIT8297& usbDevice)
 	}
 }
 
-void DoRGB(UsbIT8297& usbDevice)
+void DoRGB(UsbIT8297& usbDevice, uint32_t led_count)
 {
 	int repeat_count = 1;
 	auto delay = ms(10);
@@ -236,10 +243,124 @@ void DoRGB(UsbIT8297& usbDevice)
 	}
 }
 
-int main()
+void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
+{
+	PktEffect effect;
+	int itmp;
+	std::vector<uint32_t> params;
+	std::stringstream ss(opt);
+
+	std::string token;
+	while (std::getline(ss, token, ',')) {
+		params.push_back(std::stoi(token));
+	}
+
+	if (params.size() < 2) {
+		std::cerr << "Failed to parse argument list." << std::endl;
+		return;
+	}
+
+	ite.SetAllPorts(static_cast<EffectType>(params[0]), params[1]);
+}
+
+void ParseEffect(UsbIT8297Base& ite, const char * const opt)
+{
+	PktEffect effect;
+	int itmp;
+	std::vector<uint32_t> params;
+	std::stringstream ss(opt);
+
+	std::string token;
+	while (std::getline(ss, token, ',')) {
+		params.push_back(std::stoi(token));
+	}
+
+	if (params.size() >= 2) {
+		std::cout << "Effect " << params[1] << " on header " << params[0] << std::endl;
+		effect.Init(params[0]);
+	} else {
+		std::cerr << "Failed to parse effect argument list." << std::endl; //TODO can happen?
+		return;
+	}
+
+#define SETPARAM(n,i) \
+	if (i < params.size()) effect.e.n = params[i]; \
+	else { \
+		std::cerr << "Missing argument for '" #n "'. Using defaults for this and rest." << std::endl; \
+		goto breakout; }
+
+	SETPARAM(effect_type, 1);
+	SETPARAM(max_brightness, 2);
+	SETPARAM(min_brightness, 3);
+
+	SETPARAM(color0, 4);
+	SETPARAM(color1, 5);
+
+	SETPARAM(period0, 6);
+	SETPARAM(period1, 7);
+	SETPARAM(period2, 8);
+	SETPARAM(period3, 9);
+
+	SETPARAM(effect_param0, 10);
+	SETPARAM(effect_param1, 11);
+	SETPARAM(effect_param2, 12);
+	SETPARAM(effect_param3, 13);
+
+breakout:
+#undef SETPARAM
+
+	ite.SendPacket(effect);
+	ite.ApplyEffect();
+}
+
+void PrintUsage()
+{
+	std::cerr << "Usage:\n"
+	"    Arguments are sparsed in sequence.\n"
+	"    Ex. use '-l 120 -a 1,16720128 -r -s' to set all ports to pulsing orange, run RGB effect and then stop all effects after quiting.\n\n"
+	"    -a <effect,color>\tset all ports to effect\n"
+	"    -e <header,effect type[,other,params]>\t set built-in effect (comma separated arguments)\n"
+	"    \theader\n"
+	"    \t  32..39 (may depend on actual hardware)\n"
+	"    \teffect type\n"
+	"    \t  1 - static\n"
+	"    \t  2 - pulse\n"
+	"    \t  3 - flash\n"
+	"    \t  4 - colorcycle\n"
+	"    \t >4 - might have some more built-in effects\n"
+	"    \tmax brightness\t (default 100)\n"
+	"    \tmin brightness\t (default 0)\n\n"
+
+	"    \tcolor 0\t- main effect color (in base-10 integer format)\n"
+	"    \tcolor 1\n\n"
+
+	"    \tperiod 0\t- ex fade in speed (default 1200)\n"
+	"    \tperiod 1\t- ex fade out speed (default 1200)\n"
+	"    \tperiod 2\t- ex hold period (default 200)\n"
+	"    \tperiod 3\t- (default 0)\n\n"
+
+	"    \teffect_param0\t- ex pulse/flash/colrocycle color count (max 7)\n"
+	"    \teffect_param1\n"
+	"    \teffect_param2\t- ex flash repeat count\n"
+	"    \teffect_param3\n\n"
+
+	"    -l <count>\t- LED count per strip\n"
+	"    -r        \t- rainbow RGB effect (needs preciding -l)\n"
+	"    -s        \t- stop all effects\n"
+	<< std::endl;
+}
+
+
+int main(int argc, char* const * argv)
 {
 	PktEffect effect;
 	UsbIT8297 ite;
+	uint32_t led_count = 0;
+
+	if (argc < 2) {
+		PrintUsage();
+		return 0;
+	}
 
 #if _WIN32
 	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
@@ -272,7 +393,8 @@ int main()
 
 	try
 	{
-		ite.Init();
+		if (!(argc == 2 && !strcmp(argv[1], "-h")))
+			ite.Init();
 	}
 	catch (std::runtime_error & ex)
 	{
@@ -280,14 +402,63 @@ int main()
 		return 1;
 	}
 
-	ite.SetLedCount(LEDS_256);
-	for (int hdr = 0; hdr < 8; hdr++)
-		ite.StartPulseOrFlash(false, hdr, 7, 2, 1200, 1200, 200);
+	int c, itmp;
+	char ctmp;
+	std::stringstream ss;
 
-	ite.DisableEffect(true);
-	std::cerr << "CTRL + C to stop RGB loop" << std::endl;
-	DoRainbow(ite);
-	ite.DisableEffect(false);
+	while ((c = getopt(argc, argv, "a:rshl:e:")) != -1)
+	{
+		ss.clear(); ss.str("");
+		switch (c)
+		{
+		case 'a':
+			ParseSetAllPorts(ite, optarg);
+			break;
+		case 'e':
+			ParseEffect(ite, optarg);
+			break;
+		case 'h':
+			PrintUsage();
+			return 0;
+		case 'l':
+			ss.str(optarg);
+			ss >> led_count;
+			if (led_count > 0 && led_count <= 1024) {
+				std::cout << "LED count per strip: " << led_count << std::endl;
+				ite.SetLedCount(LedCountToEnum(led_count));
+			} else {
+				std::cerr << "ERROR: LED count is out of range: " << led_count << std::endl;
+				return 1;
+			}
+			break;
+		case 'r':
+			if (led_count <= 0) {
+				std::cerr << "ERROR: Specify led count with -l" << std::endl;
+				return 1;
+			}
+			ite.DisableEffect(true);
+			std::cout << "CTRL + C to stop RGB loop" << std::endl;
+			DoRainbow(ite, led_count);
+			ite.DisableEffect(false);
+			break;
+		case 's':
+			ite.StopAll();
+			break;
+		case '?':
+			if (optopt == 'l' || optopt == 'a' || optopt == 'e')
+				std::cerr << "ERROR: Option -" << (char)optopt << " requires an argument." << std::endl;
+			//else if (isprint(optopt))
+			//	std::cerr << "Unknown option `-" << (char)optopt << "'." << std::endl;
+			//else
+			//	std::cerr <<
+			//		"Unknown option character `\\x"
+			//		<< std::hex << (int)optopt
+			//		<< "'." << std::endl;
+			return 1;
+		default:
+			abort();
+		}
+	}
 
 #if _WIN32
 	std::cerr << "\n\n\nPress enter to exit\nPress 's' to stop leds" << std::endl;
@@ -298,8 +469,6 @@ int main()
 	ch = _getch();
 	if (ch == 's')
 		ite.StopAll();
-#else
-	ite.StopAll();
 #endif
 
 	return 0;

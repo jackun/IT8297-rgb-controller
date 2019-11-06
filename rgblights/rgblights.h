@@ -1,9 +1,38 @@
 #pragma once
+
+#if __cplusplus
 #include <cstdint>
 #include <cstring>
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#else
+#include <stdint.h>
+#endif
+
+//32bit only
+#if UINTPTR_MAX == 0xffffffff
+#ifdef _WIN32
+#define CALLBACK    __stdcall
+#else
+#define CALLBACK    __attribute__((stdcall,externally_visible,visibility("default")))
+//#define CALLBACK    __attribute__((stdcall,visibility("default")))
+#endif
+#else
+#define CALLBACK //?
+#endif
+
+#ifndef EXPORT_C_
+#if __cplusplus
+#ifdef _MSC_VER
+#define EXPORT_C_(type) extern "C" type CALLBACK
+#else
+#define EXPORT_C_(type) extern "C" CALLBACK type
+#endif
+#else
+#define EXPORT_C_(type) type CALLBACK 
+#endif
+#endif
 
 struct libusb_device_handle;
 struct libusb_context;
@@ -11,27 +40,8 @@ struct libusb_context;
 struct hid_device_;
 typedef struct hid_device_ hid_device;
 
+#if __cplusplus
 namespace rgblights {
-
-	template < typename T, size_t N >
-	constexpr size_t countof(T(&arr)[N])
-	{
-		return N;
-	}
-
-	uint32_t MakeColor(uint8_t r, uint8_t g, uint8_t b);
-
-	struct IT8297Device;
-
-#if __cplusplus
-	extern "C" {
-#endif
-
-		IT8297Device* create_device(/*ApiType api*/);
-		void free_device(IT8297Device* device);
-
-#if __cplusplus
-	}
 #endif
 
 	const uint16_t VID = 0x048D;
@@ -83,15 +93,15 @@ namespace rgblights {
 			uint8_t header;// = 0x58 - lower header, 0x59 - upper header;
 			uint16_t boffset;// = 0; // in bytes, absolute
 			uint8_t  bcount;// = 0;
-			LEDs leds[19];
+			struct LEDs leds[19];
 			uint16_t padding0;
 		} s;
 
+#if __cplusplus
 		PktRGB(uint8_t hdr = HDR_D_LED1_RGB) : s{ 0 }
 		{
 			Reset(hdr);
 		}
-
 		void Reset(uint8_t hdr)
 		{
 			s.report_id = 0xCC;
@@ -100,6 +110,8 @@ namespace rgblights {
 			s.bcount = 0;
 			memset(s.leds, 0, sizeof(s.leds));
 		}
+#endif
+
 	};
 
 	union PktEffect
@@ -129,6 +141,7 @@ namespace rgblights {
 			uint8_t padding0[30];
 		} e;
 
+#if __cplusplus
 		PktEffect() : e{ 0 }
 		{
 			Init(0);
@@ -150,6 +163,7 @@ namespace rgblights {
 			e.effect_param0 = 0;
 			e.effect_param1 = 1;
 		}
+#endif
 	};
 
 	struct IT8297_Report
@@ -170,6 +184,40 @@ namespace rgblights {
 	};
 
 #pragma pack(pop)
+
+//uint32_t MakeColor(uint8_t r, uint8_t g, uint8_t b);
+static uint32_t MakeColor(uint8_t r, uint8_t g, uint8_t b)
+{
+	return (r << 16) | (g << 8) | b;
+}
+
+static LEDCount LedCountToEnum(uint32_t c)
+{
+	if (c <= 32)
+		return LEDS_32;
+	if (c <= 64)
+		return LEDS_64;
+	if (c <= 256)
+		return LEDS_256;
+	if (c <= 512)
+		return LEDS_512;
+
+	return LEDS_1024;
+}
+
+struct IT8297Device;
+
+/* C exports for shared lib */
+EXPORT_C_(struct IT8297Device*) create_device(/*ApiType api*/);
+EXPORT_C_(void) free_device(struct IT8297Device* device);
+
+#if __cplusplus
+
+	template < typename T, size_t N >
+	constexpr size_t countof(T(&arr)[N])
+	{
+		return N;
+	}
 
 	class UsbIT8297Base
 	{
@@ -317,4 +365,5 @@ namespace rgblights {
 	};
 #endif
 
-}
+} //namespace
+#endif

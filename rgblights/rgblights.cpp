@@ -17,10 +17,6 @@
 #endif
 
 namespace rgblights {
-	uint32_t MakeColor(uint8_t r, uint8_t g, uint8_t b)
-	{
-		return (r << 16) | (g << 8) | b;
-	}
 
 	/*
 	Device descriptor: 1812010002000000408d049782000101020001
@@ -103,7 +99,7 @@ namespace rgblights {
 			//std::cout << "led offset " << (int)packet.s.boffset << ":" << (int)packet.s.bcount << std::endl;
 			res = SendPacket(packet.buffer);
 			if (res < 0) {
-				std::cerr << "error: " << res << std::endl;
+				std::cerr << "SendPacket failed: " << res << std::endl;
 				return false;
 			}
 		}
@@ -184,31 +180,9 @@ namespace rgblights {
 
 	int UsbIT8297_libusb::SendPacket(unsigned char* packet)
 	{
+		if (!handle)
+			return -1;
 		return libusb_control_transfer(handle, 0x21, 0x09, 0x03CC, 0x0000, packet, 64, 1000);
-	}
-
-	struct IT8297Device {
-		UsbIT8297Base* base;
-	};
-
-	extern "C" {
-
-		IT8297Device* create_device(/*ApiType api*/)
-		{
-			IT8297Device* device = new IT8297Device();
-			device->base = new UsbIT8297_libusb();
-			return device;
-		}
-
-		void free_device(IT8297Device* device)
-		{
-			if (device) {
-				delete device->base;
-				device->base = nullptr;
-				delete device;
-			}
-		}
-
 	}
 #endif
 
@@ -262,8 +236,50 @@ namespace rgblights {
 
 	int UsbIT8297_hidapi::SendPacket(unsigned char* packet)
 	{
+		if (!device)
+			return -1;
 		//return hid_write(device, packet, 64);
 		return hid_send_feature_report(device, packet, 64);
 	}
 #endif
+
+	struct IT8297Device {
+		UsbIT8297Base* base;
+	};
+
+	EXPORT_C_(struct IT8297Device*) create_device(/*ApiType api*/)
+	{
+		IT8297Device* device = new IT8297Device();
+
+#if defined(HAVE_LIBUSB)
+		device->base = new UsbIT8297_libusb();
+#elif defined(HAVE_HIDAPI)
+		device->base = new UsbIT8297_hidapi();
+#else
+#error No backend
+		return nullptr;
+#endif
+
+		try
+		{
+			device->base->Init();
+		}
+		catch (std::runtime_error & ex)
+		{
+			std::cerr << ex.what() << std::endl;
+			free_device(device);
+			return nullptr;
+		}
+
+		return device;
+	}
+
+	EXPORT_C_(void) free_device(struct IT8297Device* device)
+	{
+		if (device) {
+			delete device->base;
+			device->base = nullptr;
+			delete device;
+		}
+	}
 }
