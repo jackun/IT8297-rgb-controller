@@ -18,13 +18,14 @@
 #define CALLBACK    __attribute__((stdcall,externally_visible,visibility("default")))
 //#define CALLBACK    __attribute__((stdcall,visibility("default")))
 #endif
-#else
+#elif !defined(_WIN32)
 #define CALLBACK //?
 #endif
 
 #ifndef EXPORT_C_
 #if __cplusplus
 #ifdef _MSC_VER
+#include <Windows.h>
 #define EXPORT_C_(type) extern "C" type CALLBACK
 #else
 #define EXPORT_C_(type) extern "C" CALLBACK type

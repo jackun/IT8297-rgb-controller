@@ -458,16 +458,5 @@ int main(int argc, char* const * argv)
 		}
 	}
 
-#if _WIN32
-	std::cerr << "\n\n\nPress enter to exit\nPress 's' to stop leds" << std::endl;
-	//if (res < 0)
-	int ch;
-	FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
-
-	ch = _getch();
-	if (ch == 's')
-		ite.StopAll();
-#endif
-
 	return 0;
 }

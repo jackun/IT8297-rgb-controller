@@ -157,15 +157,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Demo.cpp" />
+    <ClCompile Include="wgetopt.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
+    <ClInclude Include="wgetopt.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\external\libusb\msvc\libusb_static_2017.vcxproj">
-      <Project>{349ee8f9-7d25-4909-aaf5-ff3fade72187}</Project>
-    </ProjectReference>
     <ProjectReference Include="..\rgblights\rgblights.vcxproj">
       <Project>{29bf7f3b-4c34-45c8-b2a9-88902d7dc6f8}</Project>
     </ProjectReference>
