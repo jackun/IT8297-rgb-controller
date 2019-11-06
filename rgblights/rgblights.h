@@ -307,7 +307,7 @@ EXPORT_C_(void) free_device(struct IT8297Device* device);
 		{
 			SetLedCount(LEDS_32);
 			EnableBeat(false);
-			SetAllPorts(EFFECT_PULSE, 0x00FF2100);
+			//SetAllPorts(EFFECT_PULSE, 0x00FF2100);
 		}
 
 		uint32_t GetLedCount(uint32_t c)

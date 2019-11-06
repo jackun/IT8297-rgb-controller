@@ -310,6 +310,7 @@ void ParseEffect(UsbIT8297Base& ite, const char * const opt)
 breakout:
 #undef SETPARAM
 
+	// should probably call DisableEffect(false) for RGB headers
 	ite.SendPacket(effect);
 	ite.ApplyEffect();
 }
