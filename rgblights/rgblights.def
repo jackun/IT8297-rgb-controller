@@ -1,0 +1,4 @@
+LIBRARY
+EXPORTS
+create_device
+free_device
