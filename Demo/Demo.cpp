@@ -246,7 +246,6 @@ void DoRGB(UsbIT8297& usbDevice, uint32_t led_count)
 void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
 {
 	PktEffect effect;
-	int itmp;
 	std::vector<uint32_t> params;
 	std::stringstream ss(opt);
 
@@ -266,7 +265,6 @@ void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
 void ParseEffect(UsbIT8297Base& ite, const char * const opt)
 {
 	PktEffect effect;
-	int itmp;
 	std::vector<uint32_t> params;
 	std::stringstream ss(opt);
 
@@ -402,8 +400,7 @@ int main(int argc, char* const * argv)
 		return 1;
 	}
 
-	int c, itmp;
-	char ctmp;
+	int c;
 	std::stringstream ss;
 
 	while ((c = getopt(argc, argv, "a:rshl:e:")) != -1)
