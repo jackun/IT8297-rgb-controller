@@ -181,7 +181,7 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 		auto dur = std::chrono::duration_cast<ms>(std::chrono::high_resolution_clock::now() - curr).count();
 		//std::cerr << "Duration: " << dur << "ms, sleep " << std::max(delay_ms - dur, 0ll) << "ms" << std::endl;
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(std::max(delay_ms - dur, 0ll)));
+		std::this_thread::sleep_for(std::chrono::milliseconds(std::max<int64_t>(delay_ms - dur, 0)));
 	}
 }
 
