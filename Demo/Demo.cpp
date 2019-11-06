@@ -28,7 +28,7 @@ using UsbIT8297 = rgblights::UsbIT8297_hidapi;
 #error No backend defined. Define HAVE_LIBUSB or HAVE_HIDAPI.
 #endif
 
-bool pause = false;
+bool pause_loop = false;
 
 #if _WIN32
 #include <conio.h>
@@ -142,7 +142,7 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 
 	while (running)
 	{
-		if (pause) {
+		if (pause_loop) {
 			std::this_thread::sleep_for(ms(1500));
 			continue;
 		}
@@ -196,7 +196,7 @@ void DoRGB(UsbIT8297& usbDevice, uint32_t led_count)
 
 	while (running)
 	{
-		if (pause) {
+		if (pause_loop) {
 			std::this_thread::sleep_for(ms(1500));
 			continue;
 		}
@@ -370,7 +370,7 @@ int main(int argc, char* const * argv)
 
 	MyWindow win(100, 100);
 	win.AddSuspendCB([&ite]() {
-		pause = true;
+		pause_loop = true;
 		PktEffect pkt;
 		pkt.Init(HDR_D_LED1);
 		pkt.e.effect_type = EFFECT_STATIC;
@@ -382,7 +382,7 @@ int main(int argc, char* const * argv)
 	});
 	win.AddResumeCB(
 		[&ite]() {
-		pause = false;
+		pause_loop = false;
 		ite.DisableEffect(true);
 		std::cerr << "resumed" << std::endl;
 	});
