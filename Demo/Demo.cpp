@@ -346,7 +346,7 @@ void PrintUsage()
 	"    \teffect_param3\n\n"
 
 	"    -l <count>\t- LED count per strip\n"
-	"    -r        \t- rainbow RGB effect (needs preciding -l)\n"
+	"    -r        \t- custom rainbow effect (needs preciding -l)\n"
 	"    -s        \t- stop all effects\n"
 	<< std::endl;
 }
