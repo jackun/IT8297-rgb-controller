@@ -31,7 +31,6 @@ using UsbIT8297 = rgblights::UsbIT8297_hidapi;
 bool pause_loop = false;
 
 #if _WIN32
-#include <conio.h>
 #include "Window.h"
 
 bool running = true;

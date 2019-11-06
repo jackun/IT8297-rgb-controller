@@ -10,28 +10,27 @@
 #include <stdint.h>
 #endif
 
-//32bit only
-#if UINTPTR_MAX == 0xffffffff
 #ifdef _WIN32
 #define CALLBACK    __stdcall
 #else
+//32bit only? x64 g++ keeps telling __stdcall is ignored
+#if UINTPTR_MAX == 0xffffffff
 #define CALLBACK    __attribute__((stdcall,externally_visible,visibility("default")))
 //#define CALLBACK    __attribute__((stdcall,visibility("default")))
+#else
+#define CALLBACK //__fastcall?
 #endif
-#elif !defined(_WIN32)
-#define CALLBACK //?
 #endif
 
 #ifndef EXPORT_C_
 #if __cplusplus
 #ifdef _MSC_VER
-#include <Windows.h>
 #define EXPORT_C_(type) extern "C" type CALLBACK
 #else
 #define EXPORT_C_(type) extern "C" CALLBACK type
 #endif
 #else
-#define EXPORT_C_(type) type CALLBACK 
+#define EXPORT_C_(type) type CALLBACK
 #endif
 #endif
 
