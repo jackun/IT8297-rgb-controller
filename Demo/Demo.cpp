@@ -54,7 +54,7 @@ BOOL WINAPI consoleHandler(DWORD signal) {
 #include <signal.h>
 volatile sig_atomic_t running = 1;
 void sighandler(int sig) {
-	if (sig == SIGINT)
+	if (sig == SIGINT || sig == SIGTERM)
 		running = 0;
 }
 #endif
@@ -445,6 +445,7 @@ int main(int argc, char* const * argv)
 
 #else
 	signal(SIGINT, sighandler);
+	signal(SIGTERM, sighandler);
 #endif
 
 	try
