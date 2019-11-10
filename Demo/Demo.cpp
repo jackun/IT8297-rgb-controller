@@ -9,7 +9,8 @@
 #if _WIN32
 #include "wgetopt.h"
 #else
-#include <getopt.h>
+#include <unistd.h>
+//#include <getopt.h>
 #endif
 
 using namespace rgblights;
@@ -122,7 +123,7 @@ void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
 	//std::cout << "hue: " << fH << " " << fR << " " << fG << " " << fB << std::endl;
 }
 
-void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
+void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
 	int repeat_count = 1;
 	int delay_ms = 16; // 16 - limit refresh to ~60fps, seems max is about 100 leds with libusb
@@ -153,9 +154,10 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 			hue = ((360 - hue_offset) + (360.f / led_data.size()) * i * hue_stretch);
 			hue2 = (int)hue % 360;
 
-			HSVtoRGB(r, g, b, (float)hue2, 1.f, .25f);
-			uint32_t c = ((uint32_t)(b * 255.f * pulse) << 16) | ((uint32_t)(g * 255.f * pulse) << 8) | (uint32_t)(r * 255.f * pulse);
-			led_data[i] = c;
+			HSVtoRGB(r, g, b, (float)hue2, 1.f, 1.f);
+			led_data[i] = (uint32_t)(r * 255.f * pulse * calib.r / 255)
+				| (uint32_t)(g * 255.f * pulse * calib.g / 255) << 8
+				| (uint32_t)(b * 255.f * pulse * calib.b / 255) << 16;
 			//std::cout << "hue: " << hue2 << " " << hue << std::endl;
 		}
 		//hue2 = hue;
@@ -185,7 +187,7 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count)
 	}
 }
 
-void DoRGB(UsbIT8297& usbDevice, uint32_t led_count)
+void DoRGB(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
 	int repeat_count = 1;
 	auto delay = ms(10);
@@ -276,13 +278,13 @@ void ParseEffect(UsbIT8297Base& ite, const char * const opt)
 		params.push_back(std::stoi(token));
 	}
 
-	if (params.size() >= 2) {
-		std::cout << "Effect " << params[1] << " on header " << params[0] << std::endl;
-		effect.Init(params[0]);
-	} else {
+	if (params.size() < 2) {
 		std::cerr << "Failed to parse effect argument list." << std::endl; //TODO can happen?
 		return;
 	}
+
+	std::cout << "Effect " << params[1] << " on header " << params[0] << std::endl;
+	effect.Init(params[0]);
 
 #define SETPARAM(n,i) \
 	if (i < params.size()) effect.e.n = params[i]; \
@@ -317,12 +319,37 @@ breakout:
 	ite.ApplyEffect();
 }
 
+void ParseCalib(LEDs& calib, const char * const opt)
+{
+	std::vector<uint32_t> params;
+	std::stringstream ss(opt);
+
+	std::string token;
+	while (std::getline(ss, token, ',')) {
+		params.push_back(std::stoi(token));
+	}
+
+	if (params.size() != 3) {
+		std::cerr << "Too many/few arguments for calibration argument" << std::endl;
+		return;
+	}
+
+	calib.r = (std::min)(params[0], 255u);
+	calib.g = (std::min)(params[1], 255u);
+	calib.b = (std::min)(params[2], 255u);
+	std::cout << "Calibration: "
+		<< (uint32_t)calib.r << ","
+		<< (uint32_t)calib.g << ","
+		<< (uint32_t)calib.b << std::endl;
+}
+
 void PrintUsage()
 {
 	std::cerr << "Usage:\n"
 	"    Arguments are parsed in sequence.\n"
 	"    Ex. use '-l 120 -a 2,16720128 -r -s' to set all ports to pulsing orange (0xFF2100), run RGB effect and then stop all effects after quiting.\n\n"
 	"    -a <effect,color>\tset all ports to effect\n"
+	"    -c <r,g,b>\tled calibration, value range is 0..255. Normalize rainbow effect to given range (basically max brightness)\n"
 	"    -e <header,effect type[,other,params]>\t set built-in effect (comma separated arguments)\n"
 	"    \theader\n"
 	"    \t  32..39 (may depend on actual hardware)\n"
@@ -354,16 +381,41 @@ void PrintUsage()
 	<< std::endl;
 }
 
-
 int main(int argc, char* const * argv)
 {
 	PktEffect effect;
 	UsbIT8297 ite;
-	uint32_t led_count = 0;
+	uint32_t led_count = 32;
+	const char * getopt_args = "a:c:rshl:e:";
+	LEDs calib { 255, 255, 255 };
+	int c;
+	std::stringstream ss;
 
-	if (argc < 2) {
-		PrintUsage();
-		return 0;
+	// Pre-parse
+	while ((c = getopt(argc, argv, getopt_args)) != -1)
+	{
+		ss.clear(); ss.str("");
+		switch (c)
+		{
+		case 'l':
+			ss.str(optarg);
+			ss >> led_count;
+			if (led_count <= 0 || led_count > 1024) {
+				std::cerr << "ERROR: LED count is out of range: " << led_count << std::endl;
+				return 1;
+			}
+			break;
+		case 'c':
+			ParseCalib(calib, optarg);
+			break;
+		case 'h':
+			PrintUsage();
+			return 0;
+		case '?':
+			if (isprint(optopt))
+				std::cerr << "Unknown option `-" << (char)optopt << "'." << std::endl;
+			return 1;
+		}
 	}
 
 #if _WIN32
@@ -397,8 +449,7 @@ int main(int argc, char* const * argv)
 
 	try
 	{
-		if (!(argc == 2 && !strcmp(argv[1], "-h")))
-			ite.Init();
+		ite.Init();
 	}
 	catch (std::runtime_error & ex)
 	{
@@ -406,14 +457,20 @@ int main(int argc, char* const * argv)
 		return 1;
 	}
 
-	int c;
-	std::stringstream ss;
 
-	while ((c = getopt(argc, argv, "a:rshl:e:")) != -1)
+	std::cout << "LED count per strip: " << led_count << std::endl;
+	ite.SetLedCount(LedCountToEnum(led_count));
+
+	//optreset = 1; // should be but is undefined, dafuq
+	optind = 1;
+	while ((c = getopt(argc, argv, getopt_args)) != -1)
 	{
 		ss.clear(); ss.str("");
 		switch (c)
 		{
+		case 'c':
+		case 'l':
+			break;
 		case 'a':
 			ParseSetAllPorts(ite, optarg);
 			break;
@@ -423,17 +480,6 @@ int main(int argc, char* const * argv)
 		case 'h':
 			PrintUsage();
 			return 0;
-		case 'l':
-			ss.str(optarg);
-			ss >> led_count;
-			if (led_count > 0 && led_count <= 1024) {
-				std::cout << "LED count per strip: " << led_count << std::endl;
-				ite.SetLedCount(LedCountToEnum(led_count));
-			} else {
-				std::cerr << "ERROR: LED count is out of range: " << led_count << std::endl;
-				return 1;
-			}
-			break;
 		case 'r':
 			if (led_count <= 0) {
 				std::cerr << "ERROR: Specify led count with -l" << std::endl;
@@ -441,7 +487,7 @@ int main(int argc, char* const * argv)
 			}
 			ite.DisableEffect(true);
 			std::cout << "CTRL + C to stop RGB loop" << std::endl;
-			DoRainbow(ite, led_count);
+			DoRainbow(ite, led_count, calib);
 			ite.DisableEffect(false);
 			break;
 		case 's':
