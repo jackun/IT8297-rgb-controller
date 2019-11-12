@@ -9,7 +9,7 @@
 
 static const char* g_AppName = "rgblights";
 
-using func_cb = std::function<void()>;
+using func_cb = std::function<void(bool)>;
 
 class MyWindow
 {
@@ -17,8 +17,7 @@ class MyWindow
 	int m_width;
 	int m_height;
 
-	std::vector<func_cb> m_suspend_cb;
-	std::vector<func_cb> m_resume_cb;
+	std::vector<func_cb> m_callbacks;
 
 public:
 	MyWindow(const int width, const int height) :m_hWnd(NULL), m_width(width), m_height(height)
@@ -31,13 +30,9 @@ public:
 		SendMessage(m_hWnd, WM_CLOSE, NULL, NULL);
 	}
 
-	void AddSuspendCB(func_cb cb)
+	void AddCallback(func_cb cb)
 	{
-		m_suspend_cb.push_back(cb);
-	}
-	void AddResumeCB(func_cb cb)
-	{
-		m_resume_cb.push_back(cb);
+		m_callbacks.push_back(cb);
 	}
 
 private:
@@ -99,13 +94,9 @@ private:
 			return 0;
 		case WM_POWERBROADCAST:
 		{
-			if (wParam == PBT_APMSUSPEND) {
-				for (auto& cb : ptr->m_suspend_cb)
-					cb();
-			}
-			else if (wParam == PBT_APMRESUMEAUTOMATIC) {
-				for (auto& cb : ptr->m_resume_cb)
-					cb();
+			if (wParam == PBT_APMSUSPEND || wParam == PBT_APMRESUMEAUTOMATIC) {
+				for (auto& cb : ptr->m_callbacks)
+					cb(wParam == PBT_APMSUSPEND);
 			}
 		}
 

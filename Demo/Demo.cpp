@@ -462,12 +462,11 @@ int main(int argc, char* const * argv)
 	}
 
 	MyWindow win(100, 100);
-	win.AddSuspendCB([&ite]() {
-		Suspend(ite);
-	});
-	win.AddResumeCB(
-		[&ite]() {
-		Resume(ite);
+	win.AddCallback([&ite](bool suspending) {
+		if (suspending)
+			Suspend(ite);
+		else
+			Resume(ite);
 	});
 
 #else
