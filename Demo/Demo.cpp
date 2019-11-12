@@ -29,6 +29,10 @@ using UsbIT8297 = rgblights::UsbIT8297_hidapi;
 #error No backend defined. Define HAVE_LIBUSB or HAVE_HIDAPI.
 #endif
 
+#if defined(HAVE_DBUS)
+#include "dbusmgr.h"
+#endif
+
 bool pause_loop = false;
 
 #if _WIN32
@@ -381,6 +385,29 @@ void PrintUsage()
 	<< std::endl;
 }
 
+// if running custom effect (rainbow) switch LEDs on/off on computer sleep/resume events
+void Suspend(UsbIT8297Base &ite)
+{
+	pause_loop = true;
+	PktEffect pkt;
+	pkt.Init(HDR_D_LED1);
+	pkt.e.effect_type = EFFECT_STATIC;
+	pkt.e.color0 = 0;
+	ite.SendPacket(pkt);
+	pkt.e.header = HDR_D_LED2;
+	ite.SendPacket(pkt);
+	ite.ApplyEffect();
+	ite.DisableEffect(false);
+	std::cerr << "suspending" << std::endl;
+}
+
+void Resume(UsbIT8297Base &ite)
+{
+	pause_loop = false;
+	ite.DisableEffect(true);
+	std::cerr << "resumed" << std::endl;
+}
+
 int main(int argc, char* const * argv)
 {
 	PktEffect effect;
@@ -418,36 +445,6 @@ int main(int argc, char* const * argv)
 		}
 	}
 
-#if _WIN32
-	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
-		std::cerr << "\nERROR: Could not set control handler\n" << std::endl;
-		return 1;
-	}
-
-	MyWindow win(100, 100);
-	win.AddSuspendCB([&ite]() {
-		pause_loop = true;
-		PktEffect pkt;
-		pkt.Init(HDR_D_LED1);
-		pkt.e.effect_type = EFFECT_STATIC;
-		pkt.e.color0 = 0;
-		ite.SendPacket(pkt);
-		ite.ApplyEffect();
-		ite.DisableEffect(false);
-		std::cerr << "suspending" << std::endl;
-	});
-	win.AddResumeCB(
-		[&ite]() {
-		pause_loop = false;
-		ite.DisableEffect(true);
-		std::cerr << "resumed" << std::endl;
-	});
-
-#else
-	signal(SIGINT, sighandler);
-	signal(SIGTERM, sighandler);
-#endif
-
 	try
 	{
 		ite.Init();
@@ -458,6 +455,30 @@ int main(int argc, char* const * argv)
 		return 1;
 	}
 
+#if _WIN32
+	if (!SetConsoleCtrlHandler(consoleHandler, TRUE)) {
+		std::cerr << "\nERROR: Could not set control handler\n" << std::endl;
+		return 1;
+	}
+
+	MyWindow win(100, 100);
+	win.AddSuspendCB([&ite]() {
+		Suspend(ite);
+	});
+	win.AddResumeCB(
+		[&ite]() {
+		Resume(ite);
+	});
+
+#else
+	signal(SIGINT, sighandler);
+	signal(SIGTERM, sighandler);
+
+	#if defined(HAVE_DBUS)
+	dbusmgr::dbus_manager dmgr;
+	#endif
+
+#endif
 
 	std::cout << "LED count per strip: " << led_count << std::endl;
 	ite.SetLedCount(LedCountToEnum(led_count));
@@ -486,6 +507,22 @@ int main(int argc, char* const * argv)
 				std::cerr << "ERROR: Specify led count with -l" << std::endl;
 				return 1;
 			}
+
+#if defined(HAVE_DBUS)
+			try
+			{
+				dmgr.init([&ite](bool suspending) {
+					if (suspending) {
+						Suspend(ite);
+					} else {
+						Resume(ite);
+					}
+				});
+			} catch (std::runtime_error& err) {
+				std::cerr << err.what() << std::endl;
+			}
+#endif
+
 			ite.DisableEffect(true);
 			std::cout << "CTRL + C to stop RGB loop" << std::endl;
 			DoRainbow(ite, led_count, calib);
