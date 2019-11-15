@@ -288,13 +288,13 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
 	int repeat_count = 1;
-	auto delay = ms(10);
+	int delay_ms = 32;
 	size_t led_offset = 0;
 
 	//defaults to 32 leds usually
-	std::vector<uint32_t> led_data(120);
+	std::vector<uint32_t> led_data(led_count);
 
-	const uint8_t step = led_data.size() / 60 /* roughly amount of lit leds */;
+	const uint8_t step = led_data.size() / (led_count / 2) /* roughly amount of lit leds */;
 	const __m128i step128 = _mm_setr_epi8(step, step, step, 0, step, step, step, 0, step, step, step, 0, step, step, step, 0);
 
 	while (running)
@@ -310,6 +310,7 @@ void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			if (!running)
 				break;
 
+			auto curr = clk::now();
 			// snake effect, substract step from individual RGB color bytes
 			size_t led_data_size = led_data.size();
 			led_data_size -= led_data_size % 4;
@@ -341,7 +342,8 @@ void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 				return;
 
 			led_offset = (led_offset + 1) % led_data.size();
-			std::this_thread::sleep_for(delay);
+			auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
+			std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
 		}
 	}
 }
