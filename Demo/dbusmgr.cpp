@@ -14,8 +14,6 @@ void dbus_manager::init(callback_func func)
 
 	::dbus_threads_init_default();
 
-	::dbus_error_init(&error);
-
 	if ( nullptr == (dbus_conn = ::dbus_bus_get(DBUS_BUS_SYSTEM, &error)) ) {
 		throw std::runtime_error(error.message);
 	}

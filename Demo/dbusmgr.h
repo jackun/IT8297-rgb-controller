@@ -23,7 +23,11 @@ private:
 class dbus_manager
 {
 public:
-	dbus_manager() {}
+	dbus_manager()
+	{
+		::dbus_error_init(&error);
+	}
+
 	~dbus_manager();
 
 	void init(callback_func func);
