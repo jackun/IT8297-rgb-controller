@@ -2,8 +2,11 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
-#include <cstring>
 #include <sstream>
+#include <array>
+#include <cstring>
+#include <cmath>
+
 #include <rgblights.h>
 
 #if _WIN32
@@ -15,6 +18,7 @@
 
 using namespace rgblights;
 using ms = std::chrono::milliseconds;
+using clk = std::chrono::high_resolution_clock;
 
 //#define HAVE_LIBUSB 1
 //#define HAVE_HIDAPI 1
@@ -63,6 +67,13 @@ void sighandler(int sig) {
 }
 #endif
 
+struct Color
+{
+	float r;
+	float g;
+	float b;
+};
+
 /*! \brief Convert HSV to RGB color space
 
   Converts a given set of HSV values `h', `s', `v' into RGB
@@ -70,101 +81,126 @@ void sighandler(int sig) {
   the input HSV values are in the ranges h = [0, 360], and s, v =
   [0, 1], respectively.
 
-  \param fR Red component, used as output, range: [0, 1]
-  \param fG Green component, used as output, range: [0, 1]
-  \param fB Blue component, used as output, range: [0, 1]
+  \param c  Red,Green,Blue components, used as output, range: [0, 1]
   \param fH Hue component, used as input, range: [0, 360]
   \param fS Hue component, used as input, range: [0, 1]
   \param fV Hue component, used as input, range: [0, 1]
 
 */
-void HSVtoRGB(float& fR, float& fG, float& fB, float fH, float fS, float fV) {
+void HSVtoRGB(Color& c, float fH, float fS, float fV) {
 	float fC = fV * fS; // Chroma
 	float fHPrime = fmod(fH / 60.0, 6);
 	float fX = fC * (1 - fabs(fmod(fHPrime, 2) - 1));
 	float fM = fV - fC;
 
 	if (0 <= fHPrime && fHPrime < 1) {
-		fR = fC;
-		fG = fX;
-		fB = 0;
+		c.r = fC;
+		c.g = fX;
+		c.b = 0;
 	}
 	else if (1 <= fHPrime && fHPrime < 2) {
-		fR = fX;
-		fG = fC;
-		fB = 0;
+		c.r = fX;
+		c.g = fC;
+		c.b = 0;
 	}
 	else if (2 <= fHPrime && fHPrime < 3) {
-		fR = 0;
-		fG = fC;
-		fB = fX;
+		c.r = 0;
+		c.g = fC;
+		c.b = fX;
 	}
 	else if (3 <= fHPrime && fHPrime < 4) {
-		fR = 0;
-		fG = fX;
-		fB = fC;
+		c.r = 0;
+		c.g = fX;
+		c.b = fC;
 	}
 	else if (4 <= fHPrime && fHPrime < 5) {
-		fR = fX;
-		fG = 0;
-		fB = fC;
+		c.r = fX;
+		c.g = 0;
+		c.b = fC;
 	}
 	else if (5 <= fHPrime && fHPrime < 6) {
-		fR = fC;
-		fG = 0;
-		fB = fX;
+		c.r = fC;
+		c.g = 0;
+		c.b = fX;
 	}
 	else {
-		fR = 0;
-		fG = 0;
-		fB = 0;
+		c.r = 0;
+		c.g = 0;
+		c.b = 0;
 	}
 
-	fR += fM;
-	fG += fM;
-	fB += fM;
-
-	//std::cout << "hue: " << fH << " " << fR << " " << fG << " " << fB << std::endl;
+	c.r += fM;
+	c.g += fM;
+	c.b += fM;
 }
 
-void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+Color BlendSqrt(Color a, Color b, float factor)
+{
+	Color c;
+	float inv = 1.f - factor;
+
+	if (factor < 1.0e-6 /*FLT_EPSILON*/) return a;
+	c.r = std::min(std::sqrt(a.r * a.r * inv + b.r * b.r * factor), 1.f);
+	c.g = std::min(std::sqrt(a.g * a.g * inv + b.g * b.g * factor), 1.f);
+	c.b = std::min(std::sqrt(a.b * a.b * inv + b.b * b.b * factor), 1.f);
+
+	return c;
+}
+
+Color Blend(Color a, Color b, float factor)
+{
+	Color c;
+	float inv = 1.f - factor;
+
+	if (factor < 1.0e-6 /*FLT_EPSILON*/) return a;
+	c.r = std::min(a.r * inv + b.r * factor, 1.f);
+	c.g = std::min(a.g * inv + b.g * factor, 1.f);
+	c.b = std::min(a.b * inv + b.b * factor, 1.f);
+
+	return c;
+}
+
+void DoEdgeBlender(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
 	int repeat_count = 1;
-	int delay_ms = 16; // 16 - limit refresh to ~60fps, seems max is about 100 leds with libusb
-	float hue = 0;
-	int hue2 = 0;
-	int hue_step = 1;
+	int delay_ms = 16; // 16ms - limit refresh to ~60fps, seems max is about 100 leds (with libusb atleast)
+	float edge0_hue = 0, edge1_hue = 0;
+	Color edge0, edge1;
+	Color c;
+
+	float hue_step = 1;
 	float hue_stretch = .5f;
-	int hue_offset = 0;
-	float r = 0, g = 0, b = 0;
+	float hue_offset = 0;
 	bool dir = true;
 	float pulse = 0.1f;
 	float pulse_min = 0.1f;
 	float pulse_speed = 0.01f;
-	//defaults to 32 leds usually
+
 	std::vector<uint32_t> led_data(led_count);
 
 	while (running)
 	{
 		if (pause_loop) {
-			std::this_thread::sleep_for(ms(1500));
+			std::this_thread::sleep_for(ms(100));
 			continue;
 		}
-		auto curr = std::chrono::high_resolution_clock::now();
-		//hue = hue2;
+
+		auto curr = clk::now();
+
+		edge0_hue = (hue_offset);
+		edge1_hue = (361.f - hue_offset);
+
+		HSVtoRGB(edge0, edge0_hue, 1.f, 1.f);
+		HSVtoRGB(edge1, edge1_hue, 1.f, 1.f);
+
 		for (size_t i = 0; i < led_data.size(); i++)
 		{
-			// FIXME ewww
-			hue = ((360 - hue_offset) + (360.f / led_data.size()) * i * hue_stretch);
-			hue2 = (int)hue % 360;
-
-			HSVtoRGB(r, g, b, (float)hue2, 1.f, 1.f);
-			led_data[i] = (uint32_t)(r * 255.f * pulse * calib.r / 255)
-				| (uint32_t)(g * 255.f * pulse * calib.g / 255) << 8
-				| (uint32_t)(b * 255.f * pulse * calib.b / 255) << 16;
-			//std::cout << "hue: " << hue2 << " " << hue << std::endl;
+			float factor = float(i) / led_data.size();
+			c = Blend(edge0, edge1, factor);
+			led_data[i] = (uint32_t)(c.r * pulse * calib.r)
+						| (uint32_t)(c.g * pulse * calib.g) << 8
+						| (uint32_t)(c.b * pulse * calib.b) << 16;
 		}
-		//hue2 = hue;
 
 		if (!usbDevice.SendRGB(led_data))
 			return;
@@ -182,16 +218,74 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			pulse = 1;
 			dir = false;
 		}
-		//std::cerr << pulse << std::endl;
-		hue_offset = (hue_offset + hue_step) % 360;
-		auto dur = std::chrono::duration_cast<ms>(std::chrono::high_resolution_clock::now() - curr).count();
-		//std::cerr << "Duration: " << dur << "ms, sleep " << std::max(delay_ms - dur, 0ll) << "ms" << std::endl;
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(std::max<int64_t>(delay_ms - dur, 0)));
+		hue_offset = fmodf(hue_offset + hue_step, 361.f);
+
+		auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
+		std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
 	}
 }
 
-void DoRGB(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+{
+	int repeat_count = 1;
+	int delay_ms = 16; // 16ms - limit refresh to ~60fps, seems max is about 100 leds (with libusb atleast)
+	float hue = 0;
+	float hue_step = 1;
+	float hue_stretch = .5f;
+	float hue_offset = 0;
+	Color c;
+	bool dir = true;
+	float pulse = 0.1f;
+	float pulse_min = 0.1f;
+	float pulse_speed = 0.01f;
+
+	std::vector<uint32_t> led_data(led_count);
+
+	while (running)
+	{
+		if (pause_loop) {
+			std::this_thread::sleep_for(ms(100));
+			continue;
+		}
+		auto curr = clk::now();
+
+		for (size_t i = 0; i < led_data.size(); i++)
+		{
+			// FIXME ewww
+			hue = fmodf((361.f - hue_offset) + (361.f / led_data.size()) * i * hue_stretch, 361.f);
+
+			HSVtoRGB(c, hue, 1.f, 1.f);
+			led_data[i] = (uint32_t)(c.r * pulse * calib.r)
+				| (uint32_t)(c.g * pulse * calib.g) << 8
+				| (uint32_t)(c.b * pulse * calib.b) << 16;
+		}
+
+		if (!usbDevice.SendRGB(led_data))
+			return;
+
+		if (dir)
+			pulse += pulse_speed;
+		else
+			pulse -= pulse_speed;
+
+		if (pulse < pulse_min) {
+			pulse = pulse_min;
+			dir = true;
+		}
+		else if (pulse > 1.f) {
+			pulse = 1;
+			dir = false;
+		}
+
+		hue_offset = fmodf(hue_offset + hue_step, 361);
+
+		auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
+		std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
+	}
+}
+
+void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
 	int repeat_count = 1;
 	auto delay = ms(10);
@@ -350,38 +444,45 @@ void ParseCalib(LEDs& calib, const char * const opt)
 void PrintUsage()
 {
 	std::cerr << "Usage:\n"
-	"    Arguments are parsed in sequence.\n"
-	"    Ex. use '-l 120 -a 2,16720128 -r -s' to set all ports to pulsing orange (0xFF2100), run RGB effect and then stop all effects after quiting.\n\n"
-	"    -a <effect,color>\tset all ports to effect\n"
-	"    -c <r,g,b>\tled calibration, value range is 0..255. Normalize rainbow effect to given range (basically max brightness)\n"
-	"    -e <header,effect type[,other,params]>\t set built-in effect (comma separated arguments)\n"
-	"    \theader\n"
+	"    Arguments are parsed and run in sequence.\n"
+	"    E.g. use '-l 120 -a 2,16720128 -r 0 -s' to set all ports to pulsing orange (0xFF2100), run custom RGB effect over 120 LEDs and then stop all effects after quiting.\n\n"
+	"    -a EFFECT,COLOR\n"
+	"        set all ports to effect\n\n"
+
+	"    -c R,G,B\n"
+	"        LED calibration, value range is 0..255. Normalizes custom effect to given range (basically max brightness of given color)\n\n"
+
+	"    -e HEADER,EFFECT[,other,params]\n"
+	"        set built-in effect and its parameters (comma separated arguments), where:\n"
+	"    \tHEADER\n"
 	"    \t  32..39 (may depend on actual hardware)\n"
-	"    \teffect type\n"
+	"    \tEFFECT\n"
 	"    \t  1 - static\n"
 	"    \t  2 - pulse\n"
 	"    \t  3 - flash\n"
 	"    \t  4 - colorcycle\n"
 	"    \t >4 - might have some more built-in effects\n"
-	"    \tmax brightness\t (default 100)\n"
-	"    \tmin brightness\t (default 0)\n\n"
+	"    \tMAX BRIGHTNESS\t (default 100)\n"
+	"    \tMIN BRIGHTNESS\t (default 0)\n"
 
-	"    \tcolor 0\t- main effect color (in base-10 integer format)\n"
-	"    \tcolor 1\n\n"
+	"    \tCOLOR 0    - main effect color (in base-10 integer format)\n"
+	"    \tCOLOR 1\n"
+	"    \tPERIOD 0   - ex fade in speed (default 1200)\n"
+	"    \tPERIOD 1   - ex fade out speed (default 1200)\n"
+	"    \tPERIOD 2   - ex hold period (default 200)\n"
+	"    \tPERIOD 3   - (default 0)\n\n"
 
-	"    \tperiod 0\t- ex fade in speed (default 1200)\n"
-	"    \tperiod 1\t- ex fade out speed (default 1200)\n"
-	"    \tperiod 2\t- ex hold period (default 200)\n"
-	"    \tperiod 3\t- (default 0)\n\n"
+	"    \tEFFECT PARAM 0\t- e.g. pulse/flash/colorcycle color cycle count (max 7)\n"
+	"    \tEFFECT PARAM 1\n"
+	"    \tEFFECT PARAM 2\t- e.g. flash repeat count\n"
+	"    \tEFFECT PARAM 3\n\n"
 
-	"    \teffect_param0\t- ex pulse/flash/colrocycle color count (max 7)\n"
-	"    \teffect_param1\n"
-	"    \teffect_param2\t- ex flash repeat count\n"
-	"    \teffect_param3\n\n"
-
-	"    -l <count>\t- LED count per strip\n"
-	"    -r        \t- custom rainbow effect (needs preciding -l)\n"
-	"    -s        \t- stop all effects\n"
+	"    -l COUNT \t- LED count per strip\n"
+	"    -r PRESET\t- custom effect (needs preciding -l)\n"
+	"        1 - rainbow\n"
+	"        2 - edge blend\n"
+	"        3 - snake\n"
+	"    -s         \t- stop all effects\n"
 	<< std::endl;
 }
 
@@ -408,12 +509,19 @@ void Resume(UsbIT8297Base &ite)
 	std::cerr << "resumed" << std::endl;
 }
 
+std::array<decltype(&DoRainbow), 3> effects = {
+	DoRainbow,
+	DoEdgeBlender,
+	DoSnake,
+};
+
 int main(int argc, char* const * argv)
 {
 	PktEffect effect;
 	UsbIT8297 ite;
 	uint32_t led_count = 32;
-	const char * getopt_args = "a:c:rshl:e:";
+	uint32_t custom_effect = 0;
+	const char * getopt_args = "a:c:r:shl:e:";
 	LEDs calib { 255, 255, 255 };
 	int c;
 	std::stringstream ss;
@@ -439,8 +547,8 @@ int main(int argc, char* const * argv)
 			PrintUsage();
 			return 0;
 		case '?':
-			if (isprint(optopt))
-				std::cerr << "Unknown option `-" << (char)optopt << "'." << std::endl;
+			//if (isprint(optopt))
+			//	std::cerr << "Unknown option `-" << (char)optopt << "'." << std::endl;
 			return 1;
 		}
 	}
@@ -452,7 +560,7 @@ int main(int argc, char* const * argv)
 	catch (std::runtime_error & ex)
 	{
 		std::cerr << ex.what() << std::endl;
-		return 1;
+		//return 1;
 	}
 
 #if _WIN32
@@ -507,6 +615,14 @@ int main(int argc, char* const * argv)
 				return 1;
 			}
 
+			ss.str(optarg);
+			ss >> custom_effect;
+			custom_effect--;
+			if (custom_effect > effects.size()) {
+				std::cerr << "ERROR: custom effect is out of range: " << custom_effect << " of " << effects.size() << std::endl;
+				return 1;
+			}
+
 #if defined(HAVE_DBUS)
 			try
 			{
@@ -524,7 +640,7 @@ int main(int argc, char* const * argv)
 
 			ite.DisableEffect(true);
 			std::cout << "CTRL + C to stop RGB loop" << std::endl;
-			DoRainbow(ite, led_count, calib);
+			effects[custom_effect](ite, led_count, calib);
 			ite.DisableEffect(false);
 			break;
 		case 's':
@@ -532,7 +648,7 @@ int main(int argc, char* const * argv)
 			ite.StopAll();
 			break;
 		case '?':
-			if (optopt == 'l' || optopt == 'a' || optopt == 'e')
+			if (optopt == 'l' || optopt == 'a' || optopt == 'e' || optopt == 'r')
 				std::cerr << "ERROR: Option -" << (char)optopt << " requires an argument." << std::endl;
 			//else if (isprint(optopt))
 			//	std::cerr << "Unknown option `-" << (char)optopt << "'." << std::endl;
