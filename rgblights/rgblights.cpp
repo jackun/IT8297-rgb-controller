@@ -106,7 +106,7 @@ namespace rgblights {
 		return true;
 	}
 
-	void UsbIT8297Base::SetAllPorts(EffectType type, uint32_t color)
+	void UsbIT8297Base::SetAllPorts(EffectType type, uint32_t color, uint32_t param0, uint32_t param2, uint32_t p0, uint32_t p1, uint32_t p2)
 	{
 		PktEffect effect;
 		for (int i = 0; i < 8; i++)
@@ -114,8 +114,11 @@ namespace rgblights {
 			effect.Init(i);
 			effect.e.effect_type = type;
 			effect.e.color0 = color;
-			if (type == EFFECT_COLORCYCLE)
-				effect.e.effect_param0 = 7;
+			effect.e.effect_param0 = param0;
+			effect.e.effect_param2 = param2;
+			effect.e.period0 = p0;
+			effect.e.period1 = p1;
+			effect.e.period2 = p2;
 			SendPacket(effect);
 		}
 		ApplyEffect();

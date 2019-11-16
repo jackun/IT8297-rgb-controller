@@ -298,7 +298,7 @@ EXPORT_C_(void) free_device(struct IT8297Device* device);
 
 		bool StartPulseOrFlash(bool pulseOrFlash = false, uint8_t hdr = 5, uint8_t colors = 0, uint8_t repeat = 1, uint16_t p0 = 200, uint16_t p1 = 200, uint16_t p2 = 2200, uint32_t color = 0);
 		bool SendRGB(const std::vector<uint32_t>& led_data, uint8_t hdr = HDR_D_LED1_RGB);
-		void SetAllPorts(EffectType type, uint32_t color = 0);
+		void SetAllPorts(EffectType type, uint32_t color = 0, uint32_t param0 = 7, uint32_t param2 = 1, uint32_t p0 = 1200, uint32_t p1 = 1200, uint32_t p2 = 200);
 
 	protected:
 

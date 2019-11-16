@@ -351,20 +351,37 @@ void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
 {
 	PktEffect effect;
-	std::vector<uint32_t> params;
+	std::vector<uint32_t> params {1, 0, 7, 1, 1200, 1200, 200}; //defaults
 	std::stringstream ss(opt);
 
 	std::string token;
+	int i = 0;
 	while (std::getline(ss, token, ',')) {
-		params.push_back(std::stoi(token));
+		if (i==1) {
+			uint8_t r,g,b;
+			if (sscanf(token.c_str(), "%02hhX%02hhX%02hhX,", &r, &g, &b) == 3) {
+				std::cerr << (int)r << ","<< (int)g << ","<< (int)b << std::endl;
+				params[i] = (r << 16 | g << 8 | b);
+			} else {
+				std::cerr << "Failed to parse color" << std::endl;
+			}
+		} else if (i < params.size())
+			params[i] = std::stoi(token);
+		i++;
 	}
 
-	if (params.size() < 2) {
+	if (params.size() < 2 || params.size() > 7) {
 		std::cerr << "Failed to parse argument list." << std::endl;
 		return;
 	}
 
-	ite.SetAllPorts(static_cast<EffectType>(params[0]), params[1]);
+	ite.SetAllPorts(static_cast<EffectType>(params[0]), 
+		params[1], //color
+		params[2], //param0
+		params[3], //param2
+		params[4], //period0
+		params[5], //period1
+		params[6]); //period2
 }
 
 void ParseEffect(UsbIT8297Base& ite, const char * const opt)
@@ -374,8 +391,19 @@ void ParseEffect(UsbIT8297Base& ite, const char * const opt)
 	std::stringstream ss(opt);
 
 	std::string token;
+	int i = 0;
 	while (std::getline(ss, token, ',')) {
-		params.push_back(std::stoi(token));
+		if (i == 4 || i == 5) {
+			uint8_t r,g,b;
+			if (sscanf(token.c_str(), "%02hhX%02hhX%02hhX,", &r, &g, &b) == 3) {
+				params.push_back(r << 16 | g << 8 | b);
+			} else {
+				std::cerr << "Failed to parse color" << (i - 4) << std::endl;
+			}
+		}
+		else
+			params.push_back(std::stoi(token));
+		i++;
 	}
 
 	if (params.size() < 2) {
@@ -447,9 +475,9 @@ void PrintUsage()
 {
 	std::cerr << "Usage:\n"
 	"    Arguments are parsed and run in sequence.\n"
-	"    E.g. use '-l 120 -a 2,16720128 -r 0 -s' to set all ports to pulsing orange (0xFF2100), run custom RGB effect over 120 LEDs and then stop all effects after quiting.\n\n"
-	"    -a EFFECT,COLOR\n"
-	"        set all ports to effect\n\n"
+	"    E.g. use '-l 120 -a 2,ff2100 -r 0 -s' to set all ports to pulsing orange, run custom RGB effect over 120 LEDs and then stop all effects after quiting.\n\n"
+	"    -a EFFECT,COLOR[,param0[,param2[,period0,period1,period2]]]\n"
+	"        set all ports to effect, color in hexadecimal\n\n"
 
 	"    -c R,G,B\n"
 	"        LED calibration, value range is 0..255. Normalizes custom effect to given range (basically max brightness of given color)\n\n"
@@ -467,7 +495,7 @@ void PrintUsage()
 	"    \tMAX BRIGHTNESS\t (default 100)\n"
 	"    \tMIN BRIGHTNESS\t (default 0)\n"
 
-	"    \tCOLOR 0    - main effect color (in base-10 integer format)\n"
+	"    \tCOLOR 0    - main effect color (in hexadecimal format)\n"
 	"    \tCOLOR 1\n"
 	"    \tPERIOD 0   - ex fade in speed (default 1200)\n"
 	"    \tPERIOD 1   - ex fade out speed (default 1200)\n"
@@ -603,10 +631,22 @@ int main(int argc, char* const * argv)
 		case 'l':
 			break;
 		case 'a':
-			ParseSetAllPorts(ite, optarg);
+			try {
+				ParseSetAllPorts(ite, optarg);
+			} catch(std::invalid_argument& e) {
+				std::cerr << "SetAllPorts: invalid argument: " << e.what() << std::endl;
+			} catch(std::exception& e) {
+				std::cerr << "SetAllPorts: ERROR:" << e.what() << std::endl;
+			}
 			break;
 		case 'e':
-			ParseEffect(ite, optarg);
+			try {
+				ParseEffect(ite, optarg);
+			} catch(std::invalid_argument& e) {
+				std::cerr << "Effect: invalid argument: " << e.what() << std::endl;
+			} catch(std::exception& e) {
+				std::cerr << "Effect: ERROR:" << e.what() << std::endl;
+			}
 			break;
 		case 'h':
 			PrintUsage();
