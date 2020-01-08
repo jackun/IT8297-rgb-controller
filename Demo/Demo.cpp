@@ -473,7 +473,8 @@ void ParseEffect(UsbIT8297Base& ite, const char * const opt)
 			if (sscanf(token.c_str(), "%02hhX%02hhX%02hhX,", &r, &g, &b) == 3) {
 				params.push_back(r << 16 | g << 8 | b);
 			} else {
-				std::cerr << "Failed to parse color" << (i - 4) << std::endl;
+				std::cerr << "Failed to parse color" << (i - 4) << ". Defaulting to #FF2100" << std::endl;
+				params.push_back(0xFF2100);
 			}
 		}
 		else
