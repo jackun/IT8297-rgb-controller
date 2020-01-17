@@ -197,12 +197,15 @@ void DoEdgeBlender(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 		{
 			float factor = float(i) / led_data.size();
 			c = Blend(edge0, edge1, factor);
-			led_data[i] = (uint32_t)(c.r * pulse * calib.r)
+			led_data[i] = (uint32_t)(c.r * pulse * calib.r) << 16
 						| (uint32_t)(c.g * pulse * calib.g) << 8
-						| (uint32_t)(c.b * pulse * calib.b) << 16;
+						| (uint32_t)(c.b * pulse * calib.b);
 		}
 
 		if (!usbDevice.SendRGB(led_data))
+			return;
+
+		if (!usbDevice.SendRGB(led_data, HDR_D_LED2_RGB))
 			return;
 
 		if (dir)
@@ -256,12 +259,15 @@ void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			hue = fmodf((361.f - hue_offset) + (361.f / led_data.size()) * i * hue_stretch, 361.f);
 
 			HSVtoRGB(c, hue, 1.f, 1.f);
-			led_data[i] = (uint32_t)(c.r * pulse * calib.r)
+			led_data[i] = (uint32_t)(c.r * pulse * calib.r) << 16
 				| (uint32_t)(c.g * pulse * calib.g) << 8
-				| (uint32_t)(c.b * pulse * calib.b) << 16;
+				| (uint32_t)(c.b * pulse * calib.b);
 		}
 
 		if (!usbDevice.SendRGB(led_data))
+			return;
+
+		if (!usbDevice.SendRGB(led_data, HDR_D_LED2_RGB))
 			return;
 
 		if (dir)
@@ -310,7 +316,7 @@ void snake_fadeout(std::vector<uint32_t>& led_data, uint8_t step)
 		r -= (std::min)(r, step);
 		g -= (std::min)(g, step);
 		b -= (std::min)(b, step);
-		led_data[i] = r | (g << 8) | (b << 16);
+		led_data[i] = b | (g << 8) | (r << 16);
 	}
 }
 
@@ -359,6 +365,9 @@ void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			if (!usbDevice.SendRGB(led_data))
 				return;
 
+			if (!usbDevice.SendRGB(led_data, HDR_D_LED2_RGB))
+				return;
+
 			led_offset = (led_offset + 1) % led_data.size();
 
 			auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
@@ -405,9 +414,9 @@ void DoSnakeRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			snake_fadeout(led_data, step);
 
 			HSVtoRGB(c, hue, 1.f, 1.f);
-			led_data[led_offset] = (uint32_t)(c.r * calib.r)
+			led_data[led_offset] = (uint32_t)(c.r * calib.r) << 16
 				| (uint32_t)(c.g * calib.g) << 8
-				| (uint32_t)(c.b * calib.b) << 16;
+				| (uint32_t)(c.b * calib.b);
 
 			if (!usbDevice.SendRGB(led_data))
 				return;
@@ -605,14 +614,14 @@ void Suspend(UsbIT8297Base &ite)
 	pkt.e.header = HDR_D_LED2;
 	ite.SendPacket(pkt);
 	ite.ApplyEffect();
-	ite.DisableEffect(false);
+	ite.DisableEffect(0);
 	std::cerr << "suspending" << std::endl;
 }
 
 void Resume(UsbIT8297Base &ite)
 {
 	pause_loop = false;
-	ite.DisableEffect(true);
+	ite.DisableEffect(DISABLE_D_LED1 | DISABLE_D_LED2);
 	std::cerr << "resumed" << std::endl;
 }
 
@@ -629,11 +638,11 @@ int main(int argc, char* const * argv)
 	UsbIT8297 ite;
 	uint32_t led_count = 32;
 	uint32_t custom_effect = 0;
-	const char * getopt_args = "a:c:r:shl:e:";
 	LEDs calib { 255, 255, 255 };
 	int c;
 	std::stringstream ss;
 
+	const char * getopt_args = "a:c:r:shl:e:";
 	// Pre-parse
 	while ((c = getopt(argc, argv, getopt_args)) != -1)
 	{
@@ -696,7 +705,8 @@ int main(int argc, char* const * argv)
 #endif
 
 	std::cout << "LED count per strip: " << led_count << std::endl;
-	ite.SetLedCount(LedCountToEnum(led_count));
+	auto e = LedCountToEnum(led_count);
+	ite.SetLedCount(e, e);
 
 	//optreset = 1; // should be but is undefined, dafuq
 	optind = 1;
@@ -754,14 +764,15 @@ int main(int argc, char* const * argv)
 					}
 				});
 			} catch (std::runtime_error& err) {
-				std::cerr << err.what() << std::endl;
+				std::cerr << "DBus error: " << err.what() << std::endl;
 			}
 #endif
 
-			ite.DisableEffect(true);
 			std::cout << "CTRL + C to stop RGB loop" << std::endl;
+
+			ite.DisableEffect(DISABLE_D_LED1 | DISABLE_D_LED2);
 			effects[custom_effect](ite, led_count, calib);
-			ite.DisableEffect(false);
+			ite.DisableEffect(0);
 			break;
 		case 's':
 			std::cout << "Stopping all" << std::endl;

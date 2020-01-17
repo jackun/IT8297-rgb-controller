@@ -79,6 +79,13 @@ namespace rgblights {
 		int leds = countof(packet.s.leds);
 		int left_leds = led_data.size();
 
+		// Remap RGB to LED pins manually
+		int byteorder = hdr == HDR_D_LED1_RGB ? report.byteorder0 : report.byteorder1;
+		int bob, bog, bor;
+		bob = byteorder & 0xFF;
+		bog = (byteorder >> 8) & 0xFF;
+		bor = (byteorder >> 16) & 0xFF;
+
 		while (left_leds > 0) {
 			packet.Reset(hdr);
 			leds = (std::min)(leds, left_leds);
@@ -90,9 +97,9 @@ namespace rgblights {
 
 			for (int i = 0; i < leds; i++) {
 				uint32_t c = led_data[k];
-				packet.s.leds[i].r = c & 0xFF;
-				packet.s.leds[i].g = (c >> 8) & 0xFF;
-				packet.s.leds[i].b = (c >> 16) & 0xFF;
+				packet.s.leds[i].b = (c >> (8 * (2 - bob))) & 0xFF;
+				packet.s.leds[i].g = (c >> (8 * (2 - bog))) & 0xFF;
+				packet.s.leds[i].r = (c >> (8 * (2 - bor))) & 0xFF;
 				k++;
 			}
 

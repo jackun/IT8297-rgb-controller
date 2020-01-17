@@ -48,12 +48,22 @@ namespace rgblights {
 	const uint16_t PID = 0x8297;
 
 	// LED "headers" 0x20..0x27, As seen on Gigabyte X570 Elite board
-	const uint8_t HDR_IO_PORTS = 0x20;
-	const uint8_t HDR_AUD_CAPS = 0x23;
-	const uint8_t HDR_D_LED1 = 0x25;
-	const uint8_t HDR_D_LED2 = 0x26;
+	const uint8_t HDR_BACK_IO  = 0x20;
+	const uint8_t HDR_CPU      = 0x21;
+	const uint8_t HDR_PCIE     = 0x23;
+	const uint8_t HDR_LED_C1C2 = 0x24;
+	const uint8_t HDR_D_LED1   = 0x25;
+	const uint8_t HDR_D_LED2   = 0x26;
+
 	const uint8_t HDR_D_LED1_RGB = 0x58;
 	const uint8_t HDR_D_LED2_RGB = 0x59;
+
+	enum DisableEffect
+	{
+		DISABLE_D_LED1 = 0x01,
+		DISABLE_D_LED2 = 0x02,
+		DISABLE_OTHER  = 0x04,
+	};
 
 	enum EffectType
 	{
@@ -74,11 +84,10 @@ namespace rgblights {
 		LEDS_1024,
 	};
 
-	// TODO change order as needed
 	struct LEDs
 	{
-		uint8_t g;
 		uint8_t r;
+		uint8_t g;
 		uint8_t b;
 	};
 
@@ -269,9 +278,9 @@ EXPORT_C_(void) free_device(struct IT8297Device* device);
 			return SendPacket(buffer) == 64;
 		}
 
-		bool DisableEffect(bool disable)
+		bool DisableEffect(int disable)
 		{
-			return SendPacket(0x32, disable ? 1 : 0);
+			return SendPacket(0x32, disable);
 		}
 
 		bool SetLedCount(LEDCount s0 = LEDS_32, LEDCount s1 = LEDS_32)
@@ -296,6 +305,42 @@ EXPORT_C_(void) free_device(struct IT8297Device* device);
 			return SendPacket(0x5E, 0x00);
 		}
 
+		/*
+		 * Map RGB to LED pins.
+		 * Custom RGB (SendRGB) seems to not get remapped so do it
+		 * manually before sending to MCU.
+		 */
+		bool SetByteOrders()
+		{
+			memset(buffer, 0, 64);
+			buffer[0] = 0xCC;
+			buffer[1] = 0x33;
+
+			// D_LED1 GRB - 0x00RRGGBB to 0x00GGRRBB?
+			buffer[2] = 0x02;
+			buffer[3] = 0x00;
+			buffer[4] = 0x01;
+			buffer[5] = 0x00;
+
+			// D_LED2 GRB
+			buffer[6] = 0x02;
+			buffer[7] = 0x00;
+			buffer[8] = 0x01;
+			buffer[9] = 0x00;
+
+			// LED_C1/C2 and CPU probably, just 0x00RRGGBB, pins are already GRB?
+			// Seems it's (little-endian, from PktEffect::color0)
+			// 0x02 - 0xXX0000, 0x01 - 0x00XX00, 0x00 - 0x0000XX,
+			// but mapping two channels together and setting unmapped byte behaves a little weird
+			// as if it was still mapped and just "pops" the led's color channel on.
+			buffer[10] = 0x00; //B?
+			buffer[11] = 0x01; //G?
+			buffer[12] = 0x02; //R?
+			buffer[13] = 0x00;
+
+			return SendPacket(buffer) == 64;
+		}
+
 		bool StartPulseOrFlash(bool pulseOrFlash = false, uint8_t hdr = 5, uint8_t colors = 0, uint8_t repeat = 1, uint16_t p0 = 200, uint16_t p1 = 200, uint16_t p2 = 2200, uint32_t color = 0);
 		bool SendRGB(const std::vector<uint32_t>& led_data, uint8_t hdr = HDR_D_LED1_RGB);
 		void SetAllPorts(EffectType type, uint32_t color = 0, uint32_t param0 = 7, uint32_t param2 = 1, uint32_t p0 = 1200, uint32_t p1 = 1200, uint32_t p2 = 200);
@@ -306,6 +351,7 @@ EXPORT_C_(void) free_device(struct IT8297Device* device);
 		void Startup()
 		{
 			SetLedCount(LEDS_32);
+			SetByteOrders();
 			EnableBeat(false);
 			//SetAllPorts(EFFECT_PULSE, 0x00FF2100);
 		}
