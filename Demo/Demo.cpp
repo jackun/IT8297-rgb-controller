@@ -14,6 +14,7 @@
 #else
 #include <unistd.h>
 //#include <getopt.h>
+#include "PulseAudioSoundManager.hpp"
 #endif
 
 using namespace rgblights;
@@ -432,6 +433,59 @@ void DoSnakeRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 	}
 }
 
+void DoAudioViz(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+{
+	int delay_ms = (int)(16 * (60.f / led_count)); // 60 leds' speed as base line
+
+#ifdef _WIN32
+#elif __linux__
+	PulseAudioSoundManager audio;
+	TwinPeaksSoundVisualizer viz;
+	viz.start();
+	viz.setSpeed(5);
+
+	uint32_t check_counter = 0;
+
+	std::vector<uint32_t> led_data(led_count, 0);
+	std::vector<uint32_t> led_data_faded(led_count, 0);
+	//audio.setNumberOfLeds(led_count);
+	audio.start(true);
+
+	while (running)
+	{
+		viz.updateColor();
+		if (check_counter >= (1000 / delay_ms) * 1 /* sec */) {
+			audio.checkPulse();
+			check_counter = 0;
+		}
+
+		auto curr = clk::now();
+
+		float *fft = audio.fft();
+		viz.visualize(fft, audio.fftSize(), led_data);
+
+		for(size_t i=0; i<led_data_faded.size(); i++) {
+			LED4 *out = reinterpret_cast<LED4 *> (&led_data_faded[i]);
+			LED4 *in = reinterpret_cast<LED4 *> (&led_data[i]);
+
+			// ideally FFT deals with smoothing by time but...
+			int fade_strength = 10; // blur strength 0..20: 0 - sharp, 20 - blurry
+			int fade_max = 21;
+			out->r = (uint8_t)((out->r * fade_strength + in->r * (fade_max - fade_strength)) / fade_max);
+			out->g = (uint8_t)((out->g * fade_strength + in->g * (fade_max - fade_strength)) / fade_max);
+			out->b = (uint8_t)((out->b * fade_strength + in->b * (fade_max - fade_strength)) / fade_max);
+		}
+
+		if (!usbDevice.SendRGB(led_data_faded))
+			return;
+
+		check_counter++;
+		auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
+		std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
+	}
+#endif
+}
+
 void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
 {
 	PktEffect effect;
@@ -598,6 +652,7 @@ void PrintUsage()
 	"        2 - edge blend\n"
 	"        3 - snake\n"
 	"        4 - rainbow snake\n"
+	"        5 - audio viz (TwinPeaks from Prismatik)\n"
 	"    -s         \t- stop all effects\n"
 	<< std::endl;
 }
@@ -625,11 +680,12 @@ void Resume(UsbIT8297Base &ite)
 	std::cerr << "resumed" << std::endl;
 }
 
-std::array<decltype(&DoRainbow), 4> effects = {
+std::array<decltype(&DoRainbow), 5> effects = {
 	DoRainbow,
 	DoEdgeBlender,
 	DoSnake,
 	DoSnakeRainbow,
+	DoAudioViz,
 };
 
 int main(int argc, char* const * argv)
