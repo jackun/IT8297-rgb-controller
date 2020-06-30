@@ -23,7 +23,8 @@
  *
  */
 
-
+#include <iostream>
+#include <iomanip>
 #include "SoundManagerBase.hpp"
 
 /*
@@ -127,12 +128,16 @@ static void HSVtoRGB( float& r, float& g, float& b, float h, float s, float v )
 	}
 }
 
+#define GetR(c) (c&0xFF)
+#define GetG(c) ((c>>8)&0xFF)
+#define GetB(c) ((c>>16)&0xFF)
+
 static void getHsl(uint32_t color, float& hue, float& sat, float& lum)
 {
 	float r,g,b;
-	r = (color & 0xFF) / 255.f;
-	g = ((color >> 8) & 0xFF) / 255.f;
-	b = ((color >> 16) & 0xFF) / 255.f;
+	r = GetR(color) / 255.f;
+	g = GetG(color) / 255.f;
+	b = GetB(color) / 255.f;
 	RGBtoHSV(r, g, b, hue, sat, lum);
 }
 
@@ -143,10 +148,76 @@ static void setHsl(uint32_t&color, float hue, float sat, float lum)
 	color = ((uint32_t)(r * 255)) | ((uint32_t)(g * 255) << 8) | ((uint32_t)(b * 255) << 16);
 }
 
+void SoundVisualizerBase::interpolateColor(uint32_t& outColor, uint32_t from, uint32_t to, const double value, const double maxValue) {
+	float h0, s0, l0;
+	float h1, s1, l1;
+
+	getHsl(from, h0, s0, l0);
+	getHsl(to, h1, s1, l1);
+
+	if (h0 - h1 > 180)
+		h1 += 360;
+	else if (h1 - h0 > 180)
+		h0 += 360;
+
+	h0 += (h1 - h0) * value / maxValue;
+	s0 += (s1 - s0) * value / maxValue;
+	l0 += (l1 - l0) * value / maxValue;
+	setHsl(outColor, h0, s0, l0);
+//	std::cerr << std::hex << std::setfill('0') << std::setw(8) << outColor << "\n";
+}
+
+float linear(float a, float b, float t)
+{
+    return a * (1 - t) + b * t;
+}
+
+template<typename F>
+void interpolate(uint32_t& outColor, uint32_t a, uint32_t b, float t, F interpolator)
+{
+    // 0.0 <= t <= 1.0
+	float r0, g0, b0;
+	float r1, g1, b1;
+
+	r0 = GetR(a);
+	g0 = GetG(a);
+	b0 = GetB(a);
+
+	r1 = GetR(b);
+	g1 = GetG(b);
+	b1 = GetB(b);
+
+    int out_r = (int)std::min(interpolator(r0, r1, t), 255.f);
+    int out_g = (int)std::min(interpolator(g0, g1, t), 255.f);
+    int out_b = (int)std::min(interpolator(b0, b1, t), 255.f);
+
+    outColor = out_r | out_g << 8 | out_b << 16;
+}
+
+
 bool TwinPeaksSoundVisualizer::visualize(const float* const fftData, const size_t fftSize, std::vector<uint32_t>& colors)
 {
 	bool changed = false;
 	const size_t middleLed = std::floor(colors.size() / 2);
+	/*{ // test interpolator
+		uint32_t from = m_generator.current();
+		uint32_t to = from;
+		if (m_isLiquidMode) {
+			float h, s, l;
+			getHsl(from, h, s, l);
+			setHsl(from, h, s, 120.f/255.f);
+			getHsl(to, h, s, l);
+			setHsl(to, (h + 180), s, 120.f/255.f);
+			//from.setHsl(from.hue(), from.saturation(), 120);
+			//to.setHsl(to.hue() + 180, to.saturation(), 120);
+		}
+
+		uint32_t i = 0;
+		for (auto & c : colors)
+				//interpolateColor(c, from, to, i++, middleLed);
+				interpolate(c, from, to, float(i++) / (middleLed*2), &linear);
+		return true;
+	}*/
 
 	// most sensitive Hz range for humans
 	// this assumes 44100Hz sample rate
@@ -189,13 +260,15 @@ bool TwinPeaksSoundVisualizer::visualize(const float* const fftData, const size_
 				//from.setHsl(from.hue(), from.saturation(), 120);
 				//to.setHsl(to.hue() + 180, to.saturation(), 120);
 			}
-			interpolateColor(color, from, to, idxA, middleLed);
+			//interpolateColor(color, from, to, idxA, middleLed);
+			interpolate(color, from, to, float(idxA) / middleLed, &linear);
 		}
 		else if (FadeOutSpeed > 0 && (colors[idxA] > 0 || colors[idxB] > 0)) { // fade out old peaks
 			float h,s,l;
 			uint32_t oldColor(std::max(colors[idxA], colors[idxB])); // both colors are either the same or one is 0, so max() is good enough here
 			getHsl(oldColor, h, s, l);
-			const int luminosity = std::min(std::max(l * 255 - FadeOutSpeed * ((thresholdLed > 0 ? thresholdLed : 1) / (double)idxA)* m_speedCoef, 255.0), 0.0);
+			float new_l = l * 255 - FadeOutSpeed * ((thresholdLed > 0 ? thresholdLed : 1) / (double)idxA)* m_speedCoef;
+			const int luminosity = std::max(std::min(new_l, 255.0f), 0.0f);
 			setHsl(oldColor, h, s, luminosity / 255.f);
 			color = oldColor;
 		}

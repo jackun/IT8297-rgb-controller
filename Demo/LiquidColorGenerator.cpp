@@ -138,5 +138,6 @@ uint32_t LiquidColorGenerator::generateColor()
 	int randIndex = rand() % std::max(1ul, m_unselectedColors.size());
 
 	uint32_t col = m_unselectedColors[randIndex];
+	m_unselectedColors.erase(m_unselectedColors.begin() + randIndex);
 	return col;
 }

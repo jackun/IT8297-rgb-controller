@@ -44,17 +44,7 @@ struct SoundVisualizerBase
 	virtual void clear(int count) = 0;
 	virtual bool visualize(const float* const fftData, const size_t fftSize, std::vector<uint32_t>& colors) = 0;
 
-	void interpolateColor(uint32_t& outColor, const uint32_t& from, const uint32_t& to, const double value, const double maxValue) {
-		uint32_t rgb = 0;
-		// red
-		rgb = (uint32_t)((from & 0xFF) + ((to & 0xFF) - (from & 0xFF)) * (value / maxValue)) & 0xFF;
-		// green
-		rgb |= (uint32_t)((from & 0xFF00) + ((to  & 0xFF00) - (from & 0xFF00)) * (value / maxValue)) & 0xFF00;
-		// blue
-		rgb |= (uint32_t)((from & 0xFF0000) + ((to & 0xFF0000) - (from & 0xFF0000)) * (value / maxValue)) & 0xFF0000;
-		outColor = rgb;
-	}
-
+	void interpolateColor(uint32_t& outColor, uint32_t from, uint32_t to, const double value, const double maxValue);
 	void setSpeed(int speed)
 	{
 		m_generator.setSpeed(speed);
