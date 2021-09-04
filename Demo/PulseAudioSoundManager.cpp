@@ -129,6 +129,11 @@ bool PulseAudioSoundManager::init() {
 
 	init_buffers();
 
+	m_beatanalyzer = std::make_unique<libbeat::BeatAnalyser>(192, m_ss.rate, m_buffer_samples);
+	m_FFT = std::make_unique<libbeat::FFT>(m_buffer_samples);
+	m_FFT->setSoundBuffer(fft());
+	m_beatanalyzer->setFFT(m_FFT.get());
+
 	m_main_loop = pa_threaded_mainloop_new();
 	m_context = pa_context_new(pa_threaded_mainloop_get_api(m_main_loop), "RGBLights");
 	pa_context_set_state_callback(m_context, context_state_cb, this);
@@ -398,6 +403,20 @@ void PulseAudioSoundManager::process_fft()
 	for (size_t i = 0; i < fftSize(); i++ ) {
 		m_fft[i] = sqrtf( pow(m_output[i][0], 2) + pow(m_output[i][1], 2) ) * m_weights[i];
 	}
+
+	m_FFT->setSoundBuffer(m_input.data());
+	m_FFT->processData();
+	m_beatanalyzer->processData();
+	//m_detektor.process(timer_seconds, fft(), fftSize());
+	timer_seconds += fftSize()/44100.f;
+	if (m_beatanalyzer->getDrumBeat())
+		bpm_temp ++;
+	if (timer_seconds >= 1.0f)
+	{
+		bpm = std::exchange(bpm_temp, 0);
+		timer_seconds = 0;
+	}
+	new_data = true;
 }
 
 void PulseAudioSoundManager::stream_read_cb (pa_stream *p, size_t nbytes, void *userdata)

@@ -33,6 +33,7 @@
 
 struct SoundVisualizerBase
 {
+	virtual ~SoundVisualizerBase(){}
 	virtual bool isRunning() = 0;
 	virtual void setMinColor(rgblights::LEDs color) = 0;
 	virtual void setMaxColor(rgblights::LEDs color) = 0;
@@ -53,6 +54,11 @@ struct SoundVisualizerBase
 	void updateColor()
 	{
 		m_generator.updateColor();
+	}
+
+	int generateDelay()
+	{
+		return m_generator.generateDelay();
 	}
 
 protected:
@@ -117,12 +123,16 @@ public:
 	void setMinColor(rgblights::LEDs color);
 	void setMaxColor(rgblights::LEDs color);
 	void updateColors();
+	size_t getOnsets() { return m_onsets; }
+	void resetOnsets() { m_onsets = 0; }
+	virtual bool gotDrum() { return false; }
 
 protected:
 	virtual bool init() = 0;
 	void initColors(int numberOfLeds);
 //	virtual void populateDeviceList(QList<SoundManagerDeviceInfo>& devices, int& recommended) = 0;
 	virtual void updateFft() {};
+	void updateOnset();
 
 protected:
 	SoundVisualizerBase* m_visualizer{nullptr};
@@ -133,6 +143,7 @@ protected:
 	bool	m_isInited{false};
 	int		m_device{-1};
 	bool	m_isSendDataOnlyIfColorsChanged{false};
+	size_t	m_onsets{0};
 	
 	float*	m_fft{nullptr};
 	

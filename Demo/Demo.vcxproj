@@ -157,11 +157,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Demo.cpp" />
+    <ClCompile Include="cpu_win32.cpp" />
     <ClCompile Include="wgetopt.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
     <ClInclude Include="wgetopt.h" />
+    <ClInclude Include="cpu.h" />
     <ClInclude Include="Window.h" />
   </ItemGroup>
   <ItemGroup>

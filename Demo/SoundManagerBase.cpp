@@ -26,6 +26,7 @@
 #include <iostream>
 #include <iomanip>
 #include "SoundManagerBase.hpp"
+#include "onsetsds/onsetsds.h"
 
 /*
 #if defined(Q_OS_MACOS)
@@ -39,6 +40,8 @@
 
 #include "PulseAudioSoundManager.hpp"
 
+static std::unique_ptr<OnsetsDS> ods;
+static std::vector<float> ods_buff;
 
 // r,g,b values are from 0 to 1
 // h = [0,360], s = [0,1], v = [0,1]
@@ -320,6 +323,7 @@ SoundManagerBase::~SoundManagerBase()
 		free((void *)m_fft);
 	if (m_visualizer)
 		delete m_visualizer;
+	ods = nullptr;
 }
 
 size_t SoundManagerBase::fftSize() const
@@ -411,5 +415,19 @@ void SoundManagerBase::setVisualizer(int value)
 		if (running || m_isEnabled)
 			m_visualizer->start();
 	}*/
+}
+
+void SoundManagerBase::updateOnset()
+{
+	if (!ods)
+	{
+		auto odftype = ODS_ODF_COMPLEX;
+		ods = std::make_unique<OnsetsDS>();
+		ods_buff.resize(onsetsds_memneeded(odftype, fftSize(), 11));
+		onsetsds_init(ods.get(), ods_buff.data(), ODS_FFT_FFTW3_HC, odftype, fftSize(), 11, 44100);
+	}
+
+	if (onsetsds_process(ods.get(), fft()))
+		m_onsets++;
 }
 

@@ -46,7 +46,7 @@ public:
 	void setSpeed(int value);
 	void updateColor();
 
-private:
+//private:
 	int generateDelay();
 	uint32_t generateColor();
 

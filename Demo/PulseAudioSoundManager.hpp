@@ -6,10 +6,15 @@
 #include <string>
 #include <map>
 #include <mutex>
+#include <memory>
 
 #include <complex.h>
 #include <tgmath.h>
 #include <fftw3.h>
+
+//#include "BeatDetektor.h"
+
+#include "libbeat/beatanalyser.h"
 
 enum w_type
 {
@@ -32,6 +37,14 @@ public:
 	virtual void start(bool isEnabled);
 	void addDevice(const pa_source_info *l, int eol);
 	void checkPulse();
+    bool gotDrum()
+    {
+        if (!new_data)
+            return false;
+        new_data = false;
+        return m_beatanalyzer->getDrumBeat() || m_beatanalyzer->getSnareBeat();
+    }
+
 
 protected:
 	virtual bool init();
@@ -79,4 +92,14 @@ private:
 	std::vector<float> m_input;
 	fftwf_plan m_plan = nullptr;
 	std::vector<float> m_weights;
+    float timer_seconds{0};
+    int bpm_temp = 0;
+    bool new_data = false;
+
+public:
+    //BeatDetektor m_detektor;
+
+    std::unique_ptr<libbeat::BeatAnalyser> m_beatanalyzer;
+    std::unique_ptr<libbeat::FFT> m_FFT;
+    int bpm = 0;
 };

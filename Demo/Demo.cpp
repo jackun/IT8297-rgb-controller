@@ -8,6 +8,9 @@
 #include <cmath>
 
 #include <rgblights.h>
+#include "LiquidColorGenerator.hpp"
+#include "BeatDetektor.h"
+#include "cpu.h"
 
 #if _WIN32
 #include "wgetopt.h"
@@ -17,8 +20,10 @@
 #include "PulseAudioSoundManager.hpp"
 #endif
 
+using namespace std::chrono_literals;
 using namespace rgblights;
 using ms = std::chrono::milliseconds;
+using us = std::chrono::microseconds;
 using clk = std::chrono::high_resolution_clock;
 
 //#define HAVE_LIBUSB 1
@@ -73,6 +78,14 @@ struct Color
 	float r;
 	float g;
 	float b;
+	Color() = default;
+	Color(const Color& c) = default;
+	Color(const uint32_t c)
+	{
+		r = (c & 0xFF) / 255.f;
+		g = ((c >> 8) & 0xFF) / 255.f;
+		b = ((c >> 16) & 0xFF) / 255.f;
+	}
 };
 
 /*! \brief Convert HSV to RGB color space
@@ -163,14 +176,12 @@ Color Blend(Color a, Color b, float factor)
 
 void DoEdgeBlender(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
-	int repeat_count = 1;
-	int delay_ms = 16; // 16ms - limit refresh to ~60fps, seems max is about 100 leds (with libusb atleast)
+	int delay_us = 16666; // 16ms - limit refresh to ~60fps, seems max is about 100 leds (with libusb atleast)
 	float edge0_hue = 0, edge1_hue = 0;
 	Color edge0, edge1;
 	Color c;
 
 	float hue_step = 1;
-	float hue_stretch = .5f;
 	float hue_offset = 0;
 	bool dir = true;
 	float pulse = 0.1f;
@@ -225,14 +236,13 @@ void DoEdgeBlender(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 
 		hue_offset = fmodf(hue_offset + hue_step, 361.f);
 
-		auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
-		std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
+		auto dur = std::chrono::duration_cast<us>(clk::now() - curr).count();
+		std::this_thread::sleep_for(us(std::max<int64_t>(delay_us - dur, 0)));
 	}
 }
 
 void DoRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
-	int repeat_count = 1;
 	int delay_ms = 16; // 16ms - limit refresh to ~60fps, seems max is about 100 leds (with libusb atleast)
 	float hue = 0;
 	float hue_step = 1;
@@ -324,7 +334,7 @@ void snake_fadeout(std::vector<uint32_t>& led_data, uint8_t step)
 // FIXME only works for up to 127 leds (half of uint8_t)
 void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
-	int delay_ms = (int)(32 * (60.f / led_count)); // 60 leds' speed as base line
+	int delay_us = (int)(33333 * (60.f / led_count)); // 60 leds' speed as base line
 	size_t led_offset = 0;
 	size_t color_offset = 0;
 
@@ -371,8 +381,8 @@ void DoSnake(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 
 			led_offset = (led_offset + 1) % led_data.size();
 
-			auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
-			std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
+			auto dur = std::chrono::duration_cast<us>(clk::now() - curr).count();
+			std::this_thread::sleep_for(us(std::max<int64_t>(delay_us - dur, 0)));
 		}
 		color_offset = (color_offset + 1) % countof(colors);
 	}
@@ -433,16 +443,113 @@ void DoSnakeRainbow(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 	}
 }
 
+void DoRainbowSparkles(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+{
+#if __linux__
+	PulseAudioSoundManager audio;
+	audio.start(true);
+#endif
+
+	Color c;
+	int delay_ms = 1000000/60; // 60 leds' speed as base line
+	size_t led_offset = 0;
+	float hue = 0;
+	uint32_t batch_size = led_count * 0.33;
+
+	if (!led_count) {
+		std::cerr << "ERROR: Too few" << std::endl;
+		return;
+	}
+
+	//defaults to 32 leds usually
+	std::vector<uint32_t> led_data(led_count);
+	std::vector<uint16_t> led_avail_rnd;
+	std::chrono::system_clock::time_point last_update {}, last_bpm {};
+	bool flip = false;
+
+	const uint8_t step = 3;
+	auto update_rate = std::chrono::duration_cast<us>(60s)/60; // bpm
+	LiquidColorGenerator liquid;
+	liquid.setSpeed(5);
+
+	std::cout << "Fade step:" << (int)step << std::endl;
+
+	// clear all leds
+// 	if (!usbDevice.SendRGB(std::vector<uint32_t>(512)))
+// 		return;
+
+	auto curr = clk::now();
+	last_bpm = curr;
+
+	while (running)
+	{
+		if (pause_loop) {
+			std::this_thread::sleep_for(ms(1500));
+			continue;
+		}
+
+		curr = clk::now();
+		snake_fadeout(led_data, step);
+
+		bool got_drum = false;
+		auto update_dur = curr - last_update;
+#if __linux__
+		got_drum = audio.gotDrum() && update_dur > (60000ms/200); // limit to 200bpm
+#endif
+		if (got_drum || update_dur >= update_rate)
+		{
+
+			if (got_drum) std::cerr << "Got drum\n";
+			last_update = curr;
+			for (int j = 0; j < batch_size; j++)
+			{
+				if (led_avail_rnd.empty())
+				{
+					std::cerr << "random reset\n";
+					led_avail_rnd.resize(led_count);
+					for (uint16_t i=0; i<(uint16_t)led_avail_rnd.size(); i++)
+						led_avail_rnd[i] = i;
+				}
+
+				int randIndex = rand() % std::max(static_cast<std::size_t>(1), led_avail_rnd.size());
+				//std::cerr << "randIndex: " << randIndex << std::endl;
+
+				led_offset = led_avail_rnd[randIndex];
+				led_avail_rnd.erase(led_avail_rnd.begin() + randIndex);
+
+				//HSVtoRGB(c, flip ? 360 - hue : hue, 1.f, 1.f);
+				liquid.updateColor();
+				c = liquid.current();
+				led_data[led_offset] = (uint32_t)(c.r * calib.r) << 16
+					| (uint32_t)(c.g * calib.g) << 8
+					| (uint32_t)(c.b * calib.b);
+
+				hue = hue + (360.f / 8.f) / batch_size;
+				if (hue >= 360.f)
+					hue = 0;
+				//flip = !flip;
+			}
+		}
+
+		if (!usbDevice.SendRGB(led_data))
+			return;
+
+		auto dur = std::chrono::duration_cast<us>(clk::now() - curr).count();
+		std::this_thread::sleep_for(us(std::max<int64_t>(delay_ms - dur, 0)));
+
+	}
+}
+
 void DoAudioViz(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 {
-	int delay_ms = (int)(16 * (60.f / led_count)); // 60 leds' speed as base line
+	int delay_us = (int)(16666 * (60.f / led_count)); // 60 leds' speed as base line
 
 #ifdef _WIN32
 #elif __linux__
 	PulseAudioSoundManager audio;
 	TwinPeaksSoundVisualizer viz;
 	viz.start();
-	viz.setSpeed(5);
+	viz.setSpeed(2);
 
 	uint32_t check_counter = 0;
 
@@ -454,7 +561,7 @@ void DoAudioViz(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 	while (running)
 	{
 		viz.updateColor();
-		if (check_counter >= (1000 / delay_ms) * 1 /* sec */) {
+		if (check_counter >= (1000000 / delay_us) * 1 /* sec */) {
 			audio.checkPulse();
 			check_counter = 0;
 		}
@@ -465,8 +572,9 @@ void DoAudioViz(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 		viz.visualize(fft, audio.fftSize(), led_data);
 
 		for(size_t i=0; i<led_data_faded.size(); i++) {
-			LED4 *out = reinterpret_cast<LED4 *> (&led_data_faded[i]);
-			LED4 *in = reinterpret_cast<LED4 *> (&led_data[i]);
+			LED4* out = reinterpret_cast<LED4 *> (&led_data_faded[i]);
+			LED4* in = reinterpret_cast<LED4 *> (&led_data[i]);
+			(*in) *= calib;
 
 			// ideally FFT deals with smoothing by time but...
 			int fade_strength = 10; // blur strength 0..20: 0 - sharp, 20 - blurry
@@ -480,10 +588,86 @@ void DoAudioViz(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
 			return;
 
 		check_counter++;
+		auto dur = std::chrono::duration_cast<us>(clk::now() - curr).count();
+		std::this_thread::sleep_for(us(std::max<int64_t>(delay_us - dur, 0)));
+	}
+#endif
+}
+
+void DoCpuUsage(UsbIT8297& usbDevice, uint32_t led_count, LEDs& calib)
+{
+	Color c;
+	int delay_ms = 100;
+
+	//defaults to 32 leds usually
+	std::vector<uint32_t> led_data(led_count, 0);
+	std::vector<uint32_t> led_data_faded(led_count, 0);
+	CPUStats cpu;
+	if (!cpu.Init())
+		return;
+
+	while (running)
+	{
+		if (pause_loop) {
+			std::this_thread::sleep_for(ms(1500));
+			continue;
+		}
+		auto curr = clk::now();
+		cpu.UpdateCPUData();
+
+		float total_usage = cpu.GetCPUDataTotal().percent;// / cpu.GetCpuCount();
+		if (total_usage < 25.f)
+			c = Color(0xFF0000ul);
+		else if (total_usage < 60.f)
+			c = Color(0x00FF00ul);
+		else if (total_usage < 85.f)
+			c = Color(0x0040FFul);
+		else
+			c = Color(0x0000FF);
+
+		int j;
+		for (j = 0; j < led_data.size() * total_usage / 100; j++)
+		{
+			if (!running)
+				break;
+
+			led_data[j] = (uint32_t)(c.r * calib.r) << 16
+				| (uint32_t)(c.g * calib.g) << 8
+				| (uint32_t)(c.b * calib.b);
+		}
+
+		for (; j < led_data.size(); j++)
+		{
+			if (!running)
+				break;
+			led_data[j] = 0;
+		}
+
+// 		for (j = 0; j < 2; j++)
+// 		{
+// 			if (!running)
+// 				break;
+// 			led_data[led_data.size() * rand() / RAND_MAX] = 0xFFFFFF;
+// 		}
+
+		for(size_t i=0; i<led_data_faded.size(); i++) {
+			LED4* out = reinterpret_cast<LED4 *> (&led_data_faded[i]);
+			LED4* in = reinterpret_cast<LED4 *> (&led_data[i]);
+			(*in) *= calib;
+
+			int fade_strength = 10; // blur strength 0..20: 0 - sharp, 20 - blurry
+			int fade_max = 21;
+			out->r = (uint8_t)((out->r * fade_strength + in->r * (fade_max - fade_strength)) / fade_max);
+			out->g = (uint8_t)((out->g * fade_strength + in->g * (fade_max - fade_strength)) / fade_max);
+			out->b = (uint8_t)((out->b * fade_strength + in->b * (fade_max - fade_strength)) / fade_max);
+		}
+
+		if (!usbDevice.SendRGB(led_data_faded))
+			return;
+
 		auto dur = std::chrono::duration_cast<ms>(clk::now() - curr).count();
 		std::this_thread::sleep_for(ms(std::max<int64_t>(delay_ms - dur, 0)));
 	}
-#endif
 }
 
 void ParseSetAllPorts(UsbIT8297Base& ite, const char * const opt)
@@ -652,7 +836,9 @@ void PrintUsage()
 	"        2 - edge blend\n"
 	"        3 - snake\n"
 	"        4 - rainbow snake\n"
-	"        5 - audio viz (TwinPeaks from Prismatik)\n"
+	"        5 - rainbow sparkles (try to beat detect, linux only)\n"
+	"        6 - audio viz (TwinPeaks from Prismatik, linux only)\n"
+	"        7 - cpu usage\n"
 	"    -s         \t- stop all effects\n"
 	<< std::endl;
 }
@@ -680,12 +866,14 @@ void Resume(UsbIT8297Base &ite)
 	std::cerr << "resumed" << std::endl;
 }
 
-std::array<decltype(&DoRainbow), 5> effects = {
+std::array<decltype(&DoRainbow), 7> effects = {
 	DoRainbow,
 	DoEdgeBlender,
 	DoSnake,
 	DoSnakeRainbow,
+	DoRainbowSparkles,
 	DoAudioViz,
+	DoCpuUsage,
 };
 
 int main(int argc, char* const * argv)
@@ -848,6 +1036,8 @@ int main(int argc, char* const * argv)
 		default:
 			break;
 		}
+
+		//std::cerr << "Saved: " << ite.SaveStateToMCU() << std::endl;
 	}
 
 	return 0;
